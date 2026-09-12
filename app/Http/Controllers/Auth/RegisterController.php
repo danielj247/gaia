@@ -1,0 +1,38 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Auth;
+
+use App\Actions\CreateUser;
+use App\Actions\LoginUser;
+use App\Http\Requests\CreateUserRequest;
+use Illuminate\Http\RedirectResponse;
+use Inertia\Inertia;
+use Inertia\Response;
+
+final readonly class RegisterController
+{
+    public function index(): Response
+    {
+        return Inertia::render('auth/Register', [
+        ]);
+    }
+
+    public function store(CreateUserRequest $request, CreateUser $action, LoginUser $loginUser): RedirectResponse
+    {
+        /** @var array<string, mixed> $attributes */
+        $attributes = $request->safe()->except(['password', 'password_confirmation']);
+
+        $user = $action->handle(
+            $attributes,
+            $request->string('password')->value(),
+        );
+
+        $loginUser->handle($user);
+
+        $request->session()->regenerate();
+
+        return redirect()->intended(route('dashboard', absolute: false));
+    }
+}

@@ -1,0 +1,3 @@
+{"id":"ofac-100","caption":"Ada Example","schema":"Person","properties":{"name":["Ada Example"],"alias":["A. Example"],"nationality":["us"],"email":["ada@example.test"],"passportNumber":["P100"],"address":["1 Test Street"],"topics":["sanction"],"programId":["OFAC-SDN"],"notes":["Fixture person"]}}
+{"id":"ofac-200","caption":"Example Holdings","schema":"Organization","properties":{"name":["Example Holdings"],"country":["us"],"email":["ada@example.test"],"topics":["sanction.linked"]}}
+{"id":"ofac-rel-1","caption":"owns","schema":"Ownership","properties":{"owner":["ofac-100"],"asset":["ofac-200"]}}

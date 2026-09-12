@@ -1,0 +1,14 @@
+services:
+  neo4j:
+    image: neo4j:2026.08.1
+    container_name: gaia-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/gaia-dev
+    volumes:
+      - gaia-neo4j-data:/data
+
+volumes:
+  gaia-neo4j-data:

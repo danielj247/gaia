@@ -1,0 +1,159 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Models\User;
+use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
+
+it('renders reset password page', function (): void {
+    $response = $this->fromRoute('home')
+        ->get(route('password.reset', ['token' => 'fake-token']));
+
+    $response->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('auth/ResetPassword')
+            ->has('email')
+            ->has('token'));
+});
+
+it('may reset password', function (): void {
+    Event::fake([PasswordReset::class]);
+
+    $user = User::factory()->create([
+        'email' => 'test@example.com',
+    ]);
+
+    $token = Password::createToken($user);
+
+    $response = $this->fromRoute('password.reset', ['token' => $token])
+        ->post(route('password.store'), [
+            'email' => 'test@example.com',
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+            'token' => $token,
+        ]);
+
+    $response->assertRedirectToRoute('login')
+        ->assertSessionHas('status');
+
+    expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue();
+
+    Event::assertDispatched(PasswordReset::class);
+});
+
+it('validates a new password without resetting it', function (): void {
+    $user = User::factory()->create();
+
+    $response = $this->withPrecognition()
+        ->post(route('password.store'), [
+            'token' => 'reset-token',
+            'email' => $user->email,
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+        ]);
+
+    $response->assertSuccessfulPrecognition();
+
+    expect(Hash::check('password', $user->refresh()->password))->toBeTrue();
+});
+
+it('validates the new password before confirmation is entered', function (): void {
+    $response = $this->withPrecognition()
+        ->withHeader('Precognition-Validate-Only', 'password')
+        ->post(route('password.store'), [
+            'password' => 'new-password',
+        ]);
+
+    $response->assertSuccessfulPrecognition();
+});
+
+it('fails with invalid token', function (): void {
+    User::factory()->create([
+        'email' => 'test@example.com',
+    ]);
+
+    $response = $this->fromRoute('password.reset', ['token' => 'invalid-token'])
+        ->post(route('password.store'), [
+            'email' => 'test@example.com',
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+            'token' => 'invalid-token',
+        ]);
+
+    $response->assertRedirect(route('password.reset', ['token' => 'invalid-token']))
+        ->assertSessionHasErrors('email');
+});
+
+it('fails with non-existent email', function (): void {
+    $response = $this->fromRoute('password.reset', ['token' => 'fake-token'])
+        ->post(route('password.store'), [
+            'email' => 'nonexistent@example.com',
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+            'token' => 'fake-token',
+        ]);
+
+    $response->assertRedirect(route('password.reset', ['token' => 'fake-token']))
+        ->assertSessionHasErrors('email');
+});
+
+it('requires email', function (): void {
+    $response = $this->fromRoute('password.reset', ['token' => 'fake-token'])
+        ->post(route('password.store'), [
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+            'token' => 'fake-token',
+        ]);
+
+    $response->assertRedirect(route('password.reset', ['token' => 'fake-token']))
+        ->assertSessionHasErrors('email');
+});
+
+it('requires password', function (): void {
+    $response = $this->fromRoute('password.reset', ['token' => 'fake-token'])
+        ->post(route('password.store'), [
+            'email' => 'test@example.com',
+            'token' => 'fake-token',
+        ]);
+
+    $response->assertRedirect(route('password.reset', ['token' => 'fake-token']))
+        ->assertSessionHasErrors('password');
+});
+
+it('requires password confirmation', function (): void {
+    $response = $this->fromRoute('password.reset', ['token' => 'fake-token'])
+        ->post(route('password.store'), [
+            'email' => 'test@example.com',
+            'password' => 'new-password',
+            'token' => 'fake-token',
+        ]);
+
+    $response->assertRedirect(route('password.reset', ['token' => 'fake-token']))
+        ->assertSessionHasErrors('password_confirmation');
+});
+
+it('requires matching password confirmation', function (): void {
+    $response = $this->fromRoute('password.reset', ['token' => 'fake-token'])
+        ->post(route('password.store'), [
+            'email' => 'test@example.com',
+            'password' => 'new-password',
+            'password_confirmation' => 'different-password',
+            'token' => 'fake-token',
+        ]);
+
+    $response->assertRedirect(route('password.reset', ['token' => 'fake-token']))
+        ->assertSessionHasErrors('password_confirmation');
+});
+
+it('redirects authenticated users away from reset password', function (): void {
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)
+        ->fromRoute('dashboard')
+        ->get(route('password.reset', ['token' => 'fake-token']));
+
+    $response->assertRedirectToRoute('dashboard');
+});

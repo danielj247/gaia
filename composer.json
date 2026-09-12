@@ -1,0 +1,136 @@
+{
+  "$schema": "https://getcomposer.org/schema.json",
+  "name": "danielj247/gaia",
+  "type": "project",
+  "description": "Laravel 13 / Vue 3 admin for a local Neo4j people-graph built from public OSINT dumps",
+  "keywords": [
+    "laravel",
+    "framework",
+    "vue",
+    "shadcn"
+  ],
+  "license": "MIT",
+  "require": {
+    "php": "^8.5.0",
+    "inertiajs/inertia-laravel": "^3.3.4",
+    "laravel/fortify": "^1.39.0",
+    "laravel/framework": "^13.31.0",
+    "laravel/tinker": "^3.0.2",
+    "laravel/wayfinder": "^0.1.21",
+    "laudis/neo4j-php-client": "^3.6",
+    "nunomaduro/essentials": "^1.2.0",
+    "spatie/laravel-data": "^4.23.0",
+    "spatie/laravel-typescript-transformer": "^3.3.0",
+    "spatie/typescript-transformer": "^3.3.1"
+  },
+  "require-dev": {
+    "driftingly/rector-laravel": "^2.6.2",
+    "fakerphp/faker": "^v1.24.1",
+    "larastan/larastan": "^3.12.0",
+    "laravel/boost": "^2.8.1",
+    "laravel/pail": "^1.2.7",
+    "laravel/pao": "^1.1.5",
+    "laravel/pint": "^1.32.1",
+    "mockery/mockery": "^1.6.15",
+    "nunomaduro/collision": "^8.9.5",
+    "pestphp/pest": "^5.1.4",
+    "pestphp/pest-plugin-agent": "^5.0",
+    "pestphp/pest-plugin-browser": "^5.0.1",
+    "pestphp/pest-plugin-laravel": "^5.0.1",
+    "pestphp/pest-plugin-phpstan": "^5.2.1",
+    "pestphp/pest-plugin-rector": "^5.0.4",
+    "pestphp/pest-plugin-type-coverage": "^5.0.2",
+    "phpstan/phpstan": "^2.2.14",
+    "rector/rector": "^2.6.6",
+    "roave/security-advisories": "dev-latest"
+  },
+  "autoload": {
+    "psr-4": {
+      "App\\": "app/",
+      "Database\\Factories\\": "database/factories/",
+      "Database\\Seeders\\": "database/seeders/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Tests\\": "tests/"
+    }
+  },
+  "scripts": {
+    "setup": [
+      "composer install",
+      "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
+      "@php artisan key:generate",
+      "@php artisan migrate --force",
+      "pnpm install",
+      "@transform-types",
+      "pnpm run build"
+    ],
+    "dev": [
+      "Composer\\Config::disableProcessTimeout",
+      "@php artisan dev"
+    ],
+    "post-autoload-dump": [
+      "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
+      "@php artisan package:discover --ansi"
+    ],
+    "post-update-cmd": [
+      "@php artisan vendor:publish --tag=laravel-assets --ansi --force",
+      "@php artisan clear",
+      "@update:requirements"
+    ],
+    "post-root-package-install": [
+      "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
+    ],
+    "post-create-project-cmd": [
+      "@php artisan key:generate --ansi",
+      "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
+      "@php artisan migrate --graceful --ansi"
+    ],
+    "update:requirements": [
+      "composer bump"
+    ],
+    "lint": [
+      "rector",
+      "pint --parallel",
+      "pnpm run lint"
+    ],
+    "test:type-coverage": "pest --type-coverage --min=100",
+    "test:lint": [
+      "pint --parallel --test",
+      "rector --dry-run",
+      "pnpm run test:lint"
+    ],
+    "test:unit": "pest --parallel --coverage --exactly=100.0",
+    "test:types": [
+      "@transform-types",
+      "phpstan",
+      "pnpm run test:types"
+    ],
+    "test": [
+      "@test:type-coverage",
+      "@test:unit",
+      "@test:lint",
+      "@test:types"
+    ],
+    "transform-types": [
+      "@php artisan typescript:transform"
+    ]
+  },
+  "extra": {
+    "laravel": {
+      "dont-discover": []
+    }
+  },
+  "config": {
+    "optimize-autoloader": true,
+    "preferred-install": "dist",
+    "sort-packages": true,
+    "allow-plugins": {
+      "pestphp/pest-plugin": true,
+      "php-http/discovery": true
+    }
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true
+}
