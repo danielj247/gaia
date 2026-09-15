@@ -97,9 +97,9 @@ final readonly class FollowTheMoneyMapper
 
         $nodes[] = [
             'label' => GraphNodeLabel::Identifier,
-            'id' => $this->identifierId(IdentifierKind::OpenSanctionsId, $id),
+            'id' => IdentifierId::for(IdentifierKind::OpenSanctionsId, $id),
             'properties' => [
-                'id' => $this->identifierId(IdentifierKind::OpenSanctionsId, $id),
+                'id' => IdentifierId::for(IdentifierKind::OpenSanctionsId, $id),
                 'kind' => IdentifierKind::OpenSanctionsId->value,
                 'value' => $id,
                 'caption' => $id,
@@ -111,7 +111,7 @@ final readonly class FollowTheMoneyMapper
             'fromLabel' => $label,
             'fromId' => $id,
             'toLabel' => GraphNodeLabel::Identifier,
-            'toId' => $this->identifierId(IdentifierKind::OpenSanctionsId, $id),
+            'toId' => IdentifierId::for(IdentifierKind::OpenSanctionsId, $id),
             'properties' => ['kind' => IdentifierKind::OpenSanctionsId->value],
         ];
 
@@ -122,7 +122,7 @@ final readonly class FollowTheMoneyMapper
                         continue;
                     }
 
-                    $identifierId = $this->identifierId($kind, $value);
+                    $identifierId = IdentifierId::for($kind, $value);
                     $nodes[] = [
                         'label' => GraphNodeLabel::Identifier,
                         'id' => $identifierId,
@@ -366,11 +366,6 @@ final readonly class FollowTheMoneyMapper
         $id = $value['id'] ?? null;
 
         return is_string($id) && $id !== '' ? $id : null;
-    }
-
-    private function identifierId(IdentifierKind $kind, string $value): string
-    {
-        return 'id:'.$kind->value.':'.hash('sha256', mb_strtolower(mb_trim($value)));
     }
 
     private function looksLikeEntityId(string $value): bool

@@ -19,6 +19,9 @@ enum IdentifierKind: string
     case CryptoWallet = 'crypto_wallet';
     case Website = 'website';
     case OfacId = 'ofac_id';
+    case UkslId = 'uksl_id';
+    case OfsiGroupId = 'ofsi_group_id';
+    case EuFsfId = 'eu_fsf_id';
     case OpenSanctionsId = 'opensanctions_id';
     case Other = 'other';
 
@@ -40,7 +43,7 @@ enum IdentifierKind: string
             self::Wikidata => ['wikidataId'],
             self::CryptoWallet => ['currencyCode'],
             self::Website => ['website'],
-            self::OfacId, self::OpenSanctionsId, self::Other => [],
+            self::OfacId, self::UkslId, self::OfsiGroupId, self::EuFsfId, self::OpenSanctionsId, self::Other => [],
         };
     }
 }

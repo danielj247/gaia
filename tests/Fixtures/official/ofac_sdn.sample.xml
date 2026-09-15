@@ -1,0 +1,117 @@
+<?xml version="1.0" standalone="yes"?>
+<sdnList xmlns="https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/XML">
+  <publshInformation>
+    <Publish_Date>09/15/2026</Publish_Date>
+    <Record_Count>3</Record_Count>
+  </publshInformation>
+  <sdnEntry>
+    <uid>100</uid>
+    <firstName>Ada</firstName>
+    <lastName>Example</lastName>
+    <sdnType>Individual</sdnType>
+    <title>Director</title>
+    <programList>
+      <program>SDGT</program>
+    </programList>
+    <idList>
+      <id>
+        <uid>1</uid>
+        <idType>Passport</idType>
+        <idNumber>AB123</idNumber>
+      </id>
+      <id>
+        <uid>11</uid>
+        <idType>National ID</idType>
+        <idNumber>NID-100</idNumber>
+      </id>
+      <id>
+        <uid>12</uid>
+        <idType>US FEIN</idType>
+        <idNumber>12-3456789</idNumber>
+      </id>
+      <id>
+        <uid>13</uid>
+        <idType>Email Address</idType>
+        <idNumber>ada@example.test</idNumber>
+      </id>
+      <id>
+        <uid>14</uid>
+        <idType>Website</idType>
+        <idNumber>https://ada.example.test</idNumber>
+      </id>
+      <id>
+        <uid>15</uid>
+        <idType>Phone Number</idType>
+        <idNumber>+44111</idNumber>
+      </id>
+      <id>
+        <uid>16</uid>
+        <idType></idType>
+        <idNumber></idNumber>
+      </id>
+    </idList>
+    <akaList>
+      <aka>
+        <uid>2</uid>
+        <type>a.k.a.</type>
+        <category>strong</category>
+        <firstName>A.</firstName>
+        <lastName>Example</lastName>
+      </aka>
+    </akaList>
+    <addressList>
+      <address>
+        <uid>3</uid>
+        <address1>1 Test Street</address1>
+        <city>London</city>
+        <country>United Kingdom</country>
+      </address>
+    </addressList>
+    <nationalityList>
+      <nationality>
+        <uid>4</uid>
+        <country>United Kingdom</country>
+        <mainEntry>true</mainEntry>
+      </nationality>
+    </nationalityList>
+    <dateOfBirthList>
+      <dateOfBirthItem>
+        <uid>5</uid>
+        <dateOfBirth>01 Jan 1970</dateOfBirth>
+        <mainEntry>true</mainEntry>
+      </dateOfBirthItem>
+    </dateOfBirthList>
+  </sdnEntry>
+  <sdnEntry>
+    <uid>200</uid>
+    <lastName>Example Holdings</lastName>
+    <sdnType>Entity</sdnType>
+    <programList>
+      <program>SDGT</program>
+    </programList>
+  </sdnEntry>
+  <sdnEntry>
+    <uid>300</uid>
+    <lastName>Example Vessel</lastName>
+    <sdnType>Vessel</sdnType>
+    <programList>
+      <program>SDGT</program>
+    </programList>
+    <idList>
+      <id>
+        <uid>6</uid>
+        <idType>Vessel Registration Identification</idType>
+        <idNumber>IMO1234567</idNumber>
+      </id>
+    </idList>
+    <vesselInfo>
+      <callSign>TEST</callSign>
+      <vesselType>Tanker</vesselType>
+      <vesselFlag>Panama</vesselFlag>
+    </vesselInfo>
+  </sdnEntry>
+  <sdnEntry>
+    <lastName>Missing uid</lastName>
+    <sdnType>Individual</sdnType>
+  </sdnEntry>
+</sdnList>

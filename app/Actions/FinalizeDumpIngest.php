@@ -13,7 +13,10 @@ use Illuminate\Database\Eloquent\Collection;
 
 final readonly class FinalizeDumpIngest
 {
-    public function __construct(private DispatchDumpChunks $dispatch) {}
+    public function __construct(
+        private DispatchDumpChunks $dispatch,
+        private ReleaseDumpFile $release,
+    ) {}
 
     public function handle(Dump $dump): Dump
     {
@@ -46,7 +49,7 @@ final readonly class FinalizeDumpIngest
                 'error' => null,
             ]);
 
-            return $dump->fresh() ?? $dump;
+            return $this->release->handle($dump->fresh() ?? $dump);
         }
 
         if ($this->allTerminal($chunks) && $this->hasFailed($chunks)) {

@@ -1,0 +1,32 @@
+<?xml version="1.0" standalone="yes"?>
+<sdnList>
+  <sdnEntry>
+    <uid>900</uid>
+    <lastName>No Namespace</lastName>
+    <sdnType>Entity</sdnType>
+    <programList>
+      <program>IRAN</program>
+    </programList>
+    <akaList>
+      <aka>
+        <lastName></lastName>
+        <firstName></firstName>
+      </aka>
+    </akaList>
+    <addressList>
+      <address>
+        <address1></address1>
+      </address>
+    </addressList>
+    <nationalityList>
+      <nationality>
+        <country></country>
+      </nationality>
+    </nationalityList>
+    <dateOfBirthList>
+      <dateOfBirthItem>
+        <dateOfBirth></dateOfBirth>
+      </dateOfBirthItem>
+    </dateOfBirthList>
+  </sdnEntry>
+</sdnList>

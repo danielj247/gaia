@@ -17,6 +17,7 @@ final readonly class ParseDumpChunk
 {
     public function __construct(
         private FollowTheMoneyMapper $mapper,
+        private MapOfficialRecord $mapOfficial,
         private AssignPersonIds $assignPersonIds,
         private UpsertMappedGraph $upsert,
         private FinalizeDumpIngest $finalize,
@@ -93,7 +94,9 @@ final readonly class ParseDumpChunk
 
                 $entitiesRead++;
 
-                if ($this->mapper->isInterval($entity) !== $intervals) {
+                $official = $dump->source === 'official';
+
+                if ($official ? $intervals : $this->mapper->isInterval($entity) !== $intervals) {
                     continue;
                 }
 
@@ -108,8 +111,12 @@ final readonly class ParseDumpChunk
                 }
 
                 try {
+                    $mapped = $official
+                        ? $this->mapOfficial->handle($dump->dataset, $entity, $dump->id)
+                        : $this->mapper->map($entity, $dump->id);
+
                     $counts = $this->upsert->handle(
-                        $this->assignPersonIds->handle($this->mapper->map($entity, $dump->id)),
+                        $this->assignPersonIds->handle($mapped),
                     );
                 } catch (Throwable $exception) {
                     $this->recordError($dump, $chunk, $lineNumber, 'graph_write', 'Graph write failed.');

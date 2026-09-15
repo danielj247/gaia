@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<export generationDate="2026-09-15T00:00:00.000+02:00">
+  <sanctionEntity logicalId="9" euReferenceNumber="EU.9.9">
+    <subjectType code="person"/>
+    <nameAlias wholeName="No Namespace"/>
+    <contactInfo key="OTHER" value="skip"/>
+    <contactInfo key="EMAIL" value=""/>
+  </sanctionEntity>
+</export>

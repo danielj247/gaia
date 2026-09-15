@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<export xmlns="http://eu.europa.ec/fpi/fsd/export" generationDate="2026-09-15T00:00:00.000+02:00" globalFileId="1">
+  <sanctionEntity logicalId="1" euReferenceNumber="EU.1.1" unitedNationId="">
+    <subjectType code="person" classificationCode="P"/>
+    <regulation regulationType="publication" publicationDate="2022-01-01" entryIntoForceDate="2022-01-01" numberTitle="269/2014" programme="UKR">
+      <publicationUrl>https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32014R0269</publicationUrl>
+    </regulation>
+    <nameAlias firstName="Ada" lastName="Example" wholeName="Ada Example" strong="true" gender="F"/>
+    <nameAlias wholeName="A. Example" strong="false"/>
+    <nameAlias xmlns:foo="http://example.test/foo" foo:wholeName="Namespaced Alias"/>
+    <nameAlias/>
+    <identification number="" identificationTypeCode="passport"/>
+    <citizenship countryIso2Code="GB" countryDescription="UNITED KINGDOM"/>
+    <birthdate birthdate="1970-01-01" year="1970" monthOfYear="1" dayOfMonth="1"/>
+    <address street="1 Test Street" city="London" countryIso2Code="GB" countryDescription="UNITED KINGDOM">
+      <contactInfo key="PHONE" value="+441111111111"/>
+      <contactInfo key="EMAIL" value="ada@example.test"/>
+      <contactInfo key="WEBSITE" value="https://ada.example.test"/>
+    </address>
+    <identification number="AB123" identificationTypeCode="passport" identificationTypeDescription="National passport"/>
+  </sanctionEntity>
+  <sanctionEntity logicalId="2" euReferenceNumber="EU.2.2">
+    <subjectType classificationCode="E"/>
+    <regulation programme="UKR"/>
+    <nameAlias firstName="Example" lastName="Holdings" strong="true"/>
+    <identification number="IMO8888888" identificationTypeCode="imo" identificationTypeDescription="IMO number"/>
+    <identification number="REG-2" identificationTypeCode="registration" identificationTypeDescription="Company number"/>
+    <identification number="NID-2" identificationTypeCode="id" identificationTypeDescription="National id"/>
+    <birthdate year="1970" monthOfYear="1" dayOfMonth="2"/>
+  </sanctionEntity>
+  <sanctionEntity euReferenceNumber="">
+    <subjectType code="person" classificationCode="P"/>
+    <nameAlias wholeName="Missing identity"/>
+  </sanctionEntity>
+</export>

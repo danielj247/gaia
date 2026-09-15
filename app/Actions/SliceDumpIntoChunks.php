@@ -15,7 +15,10 @@ use RuntimeException;
 
 final readonly class SliceDumpIntoChunks
 {
-    public function __construct(private GraphClient $graph) {}
+    public function __construct(
+        private GraphClient $graph,
+        private ReleaseDumpFile $release,
+    ) {}
 
     public function handle(Dump $dump): Dump
     {
@@ -101,7 +104,7 @@ final readonly class SliceDumpIntoChunks
                 'error' => null,
             ]);
 
-            return $dump->fresh() ?? $dump;
+            return $this->release->handle($dump->fresh() ?? $dump);
         }
 
         $dump->update([
