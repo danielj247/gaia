@@ -7,6 +7,8 @@ use App\Enums\GraphEdgeType;
 use App\Enums\GraphNodeLabel;
 use App\Graph\FollowTheMoneyMapper;
 use App\Models\PersonKey;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 it('gives people a gaia uuid and keeps hash-keyed identifiers', function (): void {
@@ -74,6 +76,43 @@ it('remaps interval endpoints from an existing graph person', function (): void 
     $assigned = resolve(AssignPersonIds::class)->handle($mapped);
 
     expect($assigned['edges'][0]['fromId'])->toBe('gaia-graph');
+});
+
+it('does not look up hub endpoints that can never be people', function (): void {
+    $mapped = (new FollowTheMoneyMapper())->map([
+        'id' => 'ofac-101',
+        'schema' => 'Person',
+        'caption' => 'Ada Example',
+        'properties' => [
+            'name' => ['Ada Example'],
+            'nationality' => ['gb'],
+            'email' => ['ada@example.test'],
+        ],
+    ], 'dump-1');
+
+    $looked = [];
+
+    DB::listen(function (QueryExecuted $query) use (&$looked): void {
+        if (! str_contains($query->sql, 'person_keys')) {
+            return;
+        }
+
+        foreach ($query->bindings as $binding) {
+            if (is_string($binding)) {
+                $looked[] = $binding;
+            }
+        }
+    });
+
+    $assigned = resolve(AssignPersonIds::class)->handle($mapped);
+    $hubIds = collect($assigned['edges'])
+        ->reject(fn (array $edge): bool => $edge['toLabel'] === GraphNodeLabel::Person)
+        ->pluck('toId')
+        ->all();
+
+    expect($hubIds)->toContain('dump-1', 'country:gb')
+        ->and($looked)->toContain('ofac-101')
+        ->and(array_intersect($looked, $hubIds))->toBeEmpty();
 });
 
 it('falls back to the node id when sourceId is missing', function (): void {

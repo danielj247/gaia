@@ -77,6 +77,12 @@ final readonly class AssignPersonIds
             return $this->resolve->handle($id);
         }
 
+        // Only interval edges carry endpoints whose schema is unknown, so every other
+        // label is a mapper-built id that can never be a person source id.
+        if ($label !== GraphNodeLabel::Other) {
+            return $id;
+        }
+
         $mapped = PersonKey::query()->where('source_id', $id)->value('gaia_id');
 
         if (is_string($mapped) && $mapped !== '') {

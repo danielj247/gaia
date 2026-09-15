@@ -21,3 +21,4 @@ Machine facts at research time:
 | [04-vue-graph-visualization.md](./04-vue-graph-visualization.md) | Vue admin graph visualization |
 | [05-laravel-graph-architecture.md](./05-laravel-graph-architecture.md) | PHP drivers and dual-store architecture |
 | [06-public-osint-dump.md](./06-public-osint-dump.md) | Legal public dump: OpenSanctions `us_ofac_sdn` |
+| [07-next-data-sources.md](./07-next-data-sources.md) | Next legal sources: OpenSanctions `crime`, Companies House, UK registers |

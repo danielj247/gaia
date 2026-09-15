@@ -1,29 +1,16 @@
 <script setup lang="ts">
+import { Waypoints } from '@lucide/vue'
 import { colorForLabel } from '@/lib/graphColors'
+import { isExpandable } from '@/lib/graphFormat'
 import { explorer } from '@/routes'
 import { neighborhood, sameAs, search } from '@/routes/explorer'
-import type { BreadcrumbItem } from '@/types'
-
-type GraphNode = {
-  id: string
-  label: string
-  caption: string
-  properties: Record<string, unknown>
-}
-
-type GraphEdge = {
-  id: string
-  type: string
-  source: string
-  target: string
-  properties: Record<string, unknown>
-}
-
-type SearchHit = {
-  id: string
-  label: string
-  caption: string
-}
+import type {
+  BreadcrumbItem,
+  GraphEdge,
+  GraphLabelCount,
+  GraphNode,
+  GraphSearchHit,
+} from '@/types'
 
 defineProps<{
   stats: App.Data.GraphStatsData
@@ -36,18 +23,25 @@ const breadcrumbs: BreadcrumbItem[] = [
   },
 ]
 
+const examples = ['Rosneft', 'Gazprom', 'Sovcomflot']
+
 const query = ref('')
-const hits = ref<SearchHit[]>([])
+const depth = ref('1')
+const hits = ref<GraphSearchHit[]>([])
 const nodes = ref<GraphNode[]>([])
 const edges = ref<GraphEdge[]>([])
 const selected = ref<GraphNode | null>(null)
+const hiddenLabels = ref<string[]>([])
+const sameAsTarget = ref('')
 const loading = ref(false)
 const truncated = ref(false)
+const searched = ref(false)
 const errorMessage = ref<string | null>(null)
-const emptyResults = ref(false)
-let requestId = 0
 
-const searchHttp = useHttp<Record<string, never>, { hits: SearchHit[] }>()
+let requestId = 0
+let lastQuery = ''
+
+const searchHttp = useHttp<Record<string, never>, { hits: GraphSearchHit[] }>()
 const neighborhoodHttp = useHttp<
   Record<string, never>,
   { nodes: GraphNode[]; edges: GraphEdge[]; truncated?: boolean }
@@ -56,49 +50,70 @@ const sameAsHttp = useHttp<{ from: string; to: string }, { ok: boolean }>({
   from: '',
   to: '',
 })
-const sameAsTarget = ref('')
 
-function formatProperty(value: unknown): string {
-  if (value === null || value === undefined || value === '') {
-    return '—'
-  }
+const labelCounts = computed<GraphLabelCount[]>(() => {
+  const counts = new Map<string, number>()
 
-  if (
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  ) {
-    return String(value)
-  }
+  nodes.value.forEach((node) => {
+    counts.set(node.label, (counts.get(node.label) ?? 0) + 1)
+  })
 
-  return JSON.stringify(value)
-}
+  return [...counts.entries()]
+    .sort(
+      ([leftLabel, left], [rightLabel, right]) =>
+        right - left || leftLabel.localeCompare(rightLabel),
+    )
+    .map(([label, count]) => ({ label, color: colorForLabel(label), count }))
+})
+
+const visibleNodes = computed(() =>
+  nodes.value.filter((node) => !hiddenLabels.value.includes(node.label)),
+)
+
+const visibleEdges = computed(() => {
+  const drawn = new Set(visibleNodes.value.map((node) => node.id))
+
+  return edges.value.filter(
+    (edge) => drawn.has(edge.source) && drawn.has(edge.target),
+  )
+})
 
 async function runSearch(): Promise<void> {
-  const q = query.value.trim()
+  const term = query.value.trim()
 
-  if (q.length < 2) {
+  if (term.length < 2) {
     hits.value = []
-    emptyResults.value = false
+    searched.value = false
+    lastQuery = ''
+
     return
   }
 
+  if (term === lastQuery) {
+    return
+  }
+
+  lastQuery = term
   errorMessage.value = null
-  emptyResults.value = false
 
   try {
-    const response = await searchHttp.get(search.url({ query: { q } }))
+    const response = await searchHttp.get(
+      search.url({ query: { q: term, limit: 25 } }),
+    )
 
     if (response === null || !('hits' in response)) {
       errorMessage.value = 'Search failed. Try a shorter query.'
       hits.value = []
+      lastQuery = ''
+
       return
     }
 
     hits.value = response.hits ?? []
-    emptyResults.value = hits.value.length === 0
+    searched.value = true
   } catch {
     errorMessage.value = 'Search failed. Try again.'
+    lastQuery = ''
   }
 }
 
@@ -110,7 +125,7 @@ async function loadNeighborhood(id: string): Promise<void> {
   try {
     const response = await neighborhoodHttp.get(
       neighborhood.url(encodeURIComponent(id), {
-        query: { hops: 1, limit: 200 },
+        query: { hops: Number(depth.value), limit: 200 },
       }),
     )
 
@@ -120,6 +135,7 @@ async function loadNeighborhood(id: string): Promise<void> {
 
     if (response === null || !('nodes' in response)) {
       errorMessage.value = 'Could not load that neighborhood.'
+
       return
     }
 
@@ -139,6 +155,7 @@ async function loadNeighborhood(id: string): Promise<void> {
     truncated.value = response.truncated === true
 
     const edgeIds = new Set(edges.value.map((edge) => edge.id))
+
     incomingEdges.forEach((edge) => {
       if (!edgeIds.has(edge.id)) {
         edges.value = [...edges.value, edge]
@@ -160,291 +177,234 @@ async function loadNeighborhood(id: string): Promise<void> {
   }
 }
 
-async function openHit(hit: SearchHit): Promise<void> {
-  nodes.value = []
-  edges.value = []
-  truncated.value = false
-  errorMessage.value = null
+async function openHit(hit: GraphSearchHit): Promise<void> {
+  clearCanvas()
   selected.value = { ...hit, properties: {} }
+
   await loadNeighborhood(hit.id)
 }
 
-const legendItems = computed(() => {
-  const seen = new Set<string>()
-  const items: { label: string; color: string }[] = []
-
-  for (const node of nodes.value) {
-    if (seen.has(node.label)) {
-      continue
-    }
-
-    seen.add(node.label)
-    items.push({ label: node.label, color: colorForLabel(node.label) })
+async function expand(node: GraphNode): Promise<void> {
+  if (!isExpandable(node.label)) {
+    return
   }
 
-  return items
-})
+  selected.value = node
+
+  await loadNeighborhood(node.id)
+}
+
+async function expandSelected(): Promise<void> {
+  if (selected.value) {
+    await expand(selected.value)
+  }
+}
+
+async function runExample(example: string): Promise<void> {
+  query.value = example
+
+  await runSearch()
+}
 
 function selectNode(node: GraphNode): void {
   selected.value = node
 }
 
-async function expandSelected(): Promise<void> {
-  if (!selected.value) {
-    return
-  }
+function selectById(id: string): void {
+  const match = nodes.value.find((node) => node.id === id)
 
-  await loadNeighborhood(selected.value.id)
+  if (match) {
+    selected.value = match
+  }
+}
+
+function clearCanvas(): void {
+  nodes.value = []
+  edges.value = []
+  selected.value = null
+  hiddenLabels.value = []
+  truncated.value = false
+  errorMessage.value = null
 }
 
 async function assertSameAs(): Promise<void> {
-  if (!selected.value || selected.value.label !== 'Person') {
+  const from = selected.value
+
+  if (!from || from.label !== 'Person') {
     return
   }
 
   const to = sameAsTarget.value.trim()
 
-  if (to.length < 1 || to === selected.value.id) {
+  if (to.length < 1 || to === from.id) {
     return
   }
 
   errorMessage.value = null
 
   try {
-    sameAsHttp.from = selected.value.id
+    sameAsHttp.from = from.id
     sameAsHttp.to = to
 
     const response = await sameAsHttp.post(sameAs.url())
 
     if (response === null || !('ok' in response)) {
-      errorMessage.value = 'Could not assert SAME_AS.'
+      errorMessage.value = sameAsRejection()
+
       return
     }
 
     sameAsTarget.value = ''
-    await loadNeighborhood(selected.value.id)
+
+    await loadNeighborhood(from.id)
   } catch {
-    errorMessage.value = 'Could not assert SAME_AS.'
+    errorMessage.value = sameAsRejection()
   }
 }
 
-const incidentEdges = computed(() => {
-  if (!selected.value) {
-    return []
-  }
+function sameAsRejection(): string {
+  const rejection = sameAsHttp.errors.to
 
-  const id = selected.value.id
-
-  return edges.value.filter((edge) => edge.source === id || edge.target === id)
-})
-
-const graphSummary = computed(() => {
-  if (nodes.value.length === 0) {
-    return ''
-  }
-
-  return `Loaded ${nodes.value.length} nodes, ${edges.value.length} edges.`
-})
+  return typeof rejection === 'string' ? rejection : 'Could not assert SAME_AS.'
+}
 </script>
 
 <template>
   <Head title="Explorer" />
 
   <AppLayout :breadcrumbs="breadcrumbs">
-    <div class="flex flex-1 flex-col gap-4 p-4">
-      <Heading
-        variant="small"
-        title="People graph"
-        description="Public OpenSanctions FollowTheMoney neighborhood view (US OFAC SDN and the sanctions collection). This screen shows personal data from sanctioned-entity lists. Labels stay minimal."
+    <div class="flex min-h-0 flex-1 flex-col gap-3 p-3 lg:p-4">
+      <div class="flex shrink-0 flex-wrap items-start justify-between gap-3">
+        <Heading
+          variant="small"
+          title="People graph"
+          description="Search the public OpenSanctions FollowTheMoney graph, then expand an entity to see what it connects to. These lists carry personal data, so captions stay minimal."
+        />
+        <div class="flex flex-wrap items-center gap-1.5">
+          <span
+            class="rounded-full border border-sidebar-border px-2.5 py-1 text-xs text-muted-foreground tabular-nums"
+          >
+            {{ stats.nodes.toLocaleString() }} nodes
+          </span>
+          <span
+            class="rounded-full border border-sidebar-border px-2.5 py-1 text-xs text-muted-foreground tabular-nums"
+          >
+            {{ stats.edges.toLocaleString() }} edges
+          </span>
+          <UiBadge
+            v-for="dataset in stats.datasets"
+            :key="dataset"
+            variant="secondary"
+            class="font-normal"
+          >
+            {{ dataset }}
+          </UiBadge>
+        </div>
+      </div>
+
+      <AlertError
+        v-if="errorMessage"
+        class="shrink-0"
+        title="The explorer could not finish that request."
+        :errors="errorMessage ? [errorMessage] : []"
       />
 
-      <p
-        class="rounded-md border border-sidebar-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
-      >
-        {{ stats.attribution }}
-        <span v-if="stats.datasets.length">
-          Sources: {{ stats.datasets.join(', ') }}.</span
+      <!-- Absolute workspace: long panel content scrolls instead of stretching the canvas. -->
+      <div class="relative min-h-0 flex-1">
+        <div
+          class="absolute inset-0 flex flex-col gap-3 overflow-y-auto lg:grid lg:grid-cols-[20rem_minmax(0,1fr)] lg:overflow-hidden"
         >
-        <span v-else-if="stats.dataset"> Dataset {{ stats.dataset }}.</span>
-        {{ stats.nodes }} nodes, {{ stats.edges }} edges.
-      </p>
-
-      <form class="flex flex-col gap-2 sm:flex-row" @submit.prevent="runSearch">
-        <UiInput
-          v-model="query"
-          type="search"
-          name="q"
-          maxlength="120"
-          placeholder="Search a name, id, or alias"
-          class="sm:max-w-md"
-        />
-        <UiButton
-          type="submit"
-          :disabled="searchHttp.processing || query.trim().length < 2"
-        >
-          Search
-        </UiButton>
-      </form>
-
-      <p v-if="errorMessage" class="text-sm text-destructive">
-        {{ errorMessage }}
-      </p>
-      <p v-if="truncated" class="text-sm text-muted-foreground">
-        Neighborhood was truncated. Expand again or search a more specific node.
-      </p>
-      <p
-        v-if="graphSummary"
-        class="text-sm text-muted-foreground"
-        aria-live="polite"
-      >
-        {{ graphSummary }}
-      </p>
-
-      <div class="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
-        <aside class="max-h-[32rem] space-y-2 overflow-y-auto">
-          <h2 class="text-sm font-medium">Results</h2>
-          <ul v-if="hits.length" class="space-y-1">
-            <li v-for="hit in hits" :key="hit.id">
-              <button
-                type="button"
-                class="w-full rounded-md border border-sidebar-border px-3 py-2 text-left text-sm hover:bg-muted"
-                @click="openHit(hit)"
-              >
-                <span class="font-medium">{{ hit.caption }}</span>
-                <span class="mt-0.5 block text-xs text-muted-foreground">
-                  {{ hit.label }} · {{ hit.id }}
-                </span>
-              </button>
-            </li>
-          </ul>
-          <p v-else-if="emptyResults" class="text-sm text-muted-foreground">
-            No entities matched that search.
-          </p>
-          <p v-else class="text-sm text-muted-foreground">
-            Search to load an ego network. The canvas is not in the
-            accessibility tree — this list is.
-          </p>
-
-          <div v-if="nodes.length" class="space-y-1 pt-4">
-            <h2 class="text-sm font-medium">Neighborhood</h2>
-            <ul class="space-y-1">
-              <li v-for="node in nodes" :key="node.id">
-                <button
-                  type="button"
-                  class="w-full rounded-md px-3 py-1.5 text-left text-sm hover:bg-muted"
-                  @click="selectNode(node)"
-                >
-                  <span class="font-medium">{{ node.caption }}</span>
-                  <span class="mt-0.5 block text-xs text-muted-foreground">{{
-                    node.label
-                  }}</span>
-                </button>
-              </li>
-            </ul>
+          <div class="flex min-h-0 flex-col gap-3">
+            <GraphRail
+              v-model:query="query"
+              v-model:depth="depth"
+              class="min-h-0 lg:flex-1"
+              :hits="hits"
+              :canvas-nodes="visibleNodes"
+              :selected-id="selected?.id"
+              :searching="searchHttp.processing"
+              :searched="searched"
+              @search="runSearch"
+              @open="openHit"
+              @select="selectNode"
+              @clear-canvas="clearCanvas"
+            >
+              <template #selected>
+                <GraphNodeDetails
+                  v-if="selected"
+                  v-model:same-as-target="sameAsTarget"
+                  class="min-h-0 flex-1"
+                  :node="selected"
+                  :nodes="nodes"
+                  :edges="edges"
+                  :expanding="loading"
+                  :linking="sameAsHttp.processing"
+                  @close="selected = null"
+                  @expand="expandSelected"
+                  @select="selectById"
+                  @assert-same-as="assertSameAs"
+                />
+              </template>
+            </GraphRail>
+            <GraphAttribution :stats="stats" />
           </div>
 
-          <div
-            v-if="selected"
-            class="space-y-2 border-t border-sidebar-border pt-4"
-          >
-            <h2 class="text-sm font-medium">{{ selected.caption }}</h2>
-            <p class="text-xs text-muted-foreground">
-              {{ selected.label }} · {{ selected.id }}
-            </p>
-            <dl class="space-y-2 text-sm">
-              <div
-                v-for="(value, key) in selected.properties"
-                :key="String(key)"
-                class="grid gap-1"
-              >
-                <dt class="text-muted-foreground">{{ key }}</dt>
-                <dd class="break-all">{{ formatProperty(value) }}</dd>
-              </div>
-            </dl>
-            <div v-if="incidentEdges.length" class="space-y-1">
-              <h3 class="text-xs font-medium text-muted-foreground">
-                Relationships
-              </h3>
-              <ul class="space-y-1 text-xs">
-                <li
-                  v-for="edge in incidentEdges"
-                  :key="edge.id"
-                  class="break-all"
-                >
-                  {{ edge.type.replaceAll('_', ' ') }}
-                  ·
-                  {{ edge.source === selected.id ? edge.target : edge.source }}
-                </li>
-              </ul>
-            </div>
-            <UiButton
-              variant="secondary"
-              :disabled="
-                loading ||
-                ['Dump', 'Country', 'Sanction'].includes(selected.label)
-              "
-              @click="expandSelected"
+          <section class="relative min-h-[26rem] lg:min-h-0">
+            <GraphViewport
+              class="size-full"
+              :nodes="visibleNodes"
+              :edges="visibleEdges"
+              :selected-id="selected?.id"
+              :loading="loading"
+              @select="selectNode"
+              @expand="expand"
+              @deselect="selected = null"
+              @error="errorMessage = $event"
             >
-              Expand neighbors
-            </UiButton>
-            <form
-              v-if="selected.label === 'Person'"
-              class="space-y-2"
-              @submit.prevent="assertSameAs"
-            >
-              <label
-                class="text-xs font-medium text-muted-foreground"
-                for="same-as-target"
-              >
-                Analyst SAME_AS
-              </label>
-              <UiInput
-                id="same-as-target"
-                v-model="sameAsTarget"
-                type="text"
-                name="to"
-                maxlength="80"
-                placeholder="Other person id"
-              />
-              <UiButton
-                type="submit"
-                variant="outline"
-                :disabled="
-                  sameAsHttp.processing || sameAsTarget.trim().length < 1
-                "
-              >
-                Link identities
-              </UiButton>
-            </form>
-          </div>
-        </aside>
+              <template #empty>
+                <div class="max-w-sm text-center">
+                  <span
+                    class="mx-auto flex size-11 items-center justify-center rounded-full border border-sidebar-border bg-card/80"
+                  >
+                    <Waypoints
+                      class="size-5 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                  </span>
+                  <p class="mt-3 text-sm font-medium">
+                    Nothing on the canvas yet
+                  </p>
+                  <p class="mt-1 text-xs text-muted-foreground">
+                    Search a name, alias, vessel or OpenSanctions id, then open
+                    a result to draw its neighborhood.
+                  </p>
+                  <div class="mt-3 flex flex-wrap justify-center gap-1.5">
+                    <UiButton
+                      v-for="example in examples"
+                      :key="example"
+                      size="sm"
+                      variant="outline"
+                      class="h-7 rounded-full px-3 text-xs"
+                      @click="runExample(example)"
+                    >
+                      {{ example }}
+                    </UiButton>
+                  </div>
+                </div>
+              </template>
 
-        <div class="space-y-2">
-          <ul
-            v-if="legendItems.length"
-            class="flex flex-wrap gap-2"
-            aria-label="Node type legend"
-          >
-            <li
-              v-for="item in legendItems"
-              :key="item.label"
-              class="flex items-center gap-1.5 text-xs text-muted-foreground"
-            >
-              <span
-                class="size-2.5 rounded-full"
-                :style="{ backgroundColor: item.color }"
-                aria-hidden="true"
-              />
-              {{ item.label }}
-            </li>
-          </ul>
-          <GraphViewport
-            :nodes="nodes"
-            :edges="edges"
-            :selected-id="selected?.id"
-            @select="selectNode"
-            @error="errorMessage = $event"
-          />
+              <template #legend>
+                <GraphLegend
+                  v-if="labelCounts.length > 0"
+                  v-model:hidden="hiddenLabels"
+                  :counts="labelCounts"
+                  :node-count="visibleNodes.length"
+                  :edge-count="visibleEdges.length"
+                  :truncated="truncated"
+                />
+              </template>
+            </GraphViewport>
+          </section>
         </div>
       </div>
     </div>
