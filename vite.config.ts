@@ -94,6 +94,7 @@ export default defineConfig({
         {
           '@inertiajs/vue3': [
             'useForm',
+            'useHttp',
             'usePage',
             'useRemember',
             'usePrefetch',

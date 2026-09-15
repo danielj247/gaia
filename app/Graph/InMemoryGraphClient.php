@@ -50,8 +50,8 @@ final class InMemoryGraphClient implements GraphClient
         string $toId,
         array $properties = [],
     ): void {
-        $from = $this->findKey($fromId, $fromLabel);
-        $to = $this->findKey($toId, $toLabel);
+        $from = $this->resolveKey($fromId, $fromLabel);
+        $to = $this->resolveKey($toId, $toLabel);
 
         if ($from === null || $to === null) {
             return;
@@ -83,17 +83,25 @@ final class InMemoryGraphClient implements GraphClient
         }
 
         $visited = $frontier;
+        $seedIsHub = false;
 
-        for ($hop = 0; $hop < $hops; $hop++) {
+        foreach (array_keys($frontier) as $key) {
+            if ($this->isInspectOnlyHub($key)) {
+                $seedIsHub = true;
+                break;
+            }
+        }
+
+        for ($hop = 0; $hop < $hops && ! $seedIsHub; $hop++) {
             $next = [];
 
             foreach (array_keys($frontier) as $key) {
                 foreach ($this->edges as $edge) {
-                    if ($edge['from'] === $key && ! isset($visited[$edge['to']])) {
+                    if ($edge['from'] === $key && ! isset($visited[$edge['to']]) && $this->isExpandable($edge['to'])) {
                         $next[$edge['to']] = true;
                     }
 
-                    if ($edge['to'] === $key && ! isset($visited[$edge['from']])) {
+                    if ($edge['to'] === $key && ! isset($visited[$edge['from']]) && $this->isExpandable($edge['from'])) {
                         $next[$edge['from']] = true;
                     }
                 }
@@ -103,7 +111,20 @@ final class InMemoryGraphClient implements GraphClient
             $frontier = $next;
         }
 
-        $nodeKeys = array_keys($visited);
+        $nodeKeys = [];
+        $seenIds = [];
+
+        foreach (array_keys($visited) as $key) {
+            $id = $this->nodes[$key]['id'];
+
+            if (isset($seenIds[$id])) {
+                continue;
+            }
+
+            $seenIds[$id] = true;
+            $nodeKeys[] = $key;
+        }
+
         $truncated = count($nodeKeys) > $limit;
         $nodeKeys = array_slice($nodeKeys, 0, $limit);
         $allowed = array_fill_keys($nodeKeys, true);
@@ -153,8 +174,16 @@ final class InMemoryGraphClient implements GraphClient
         $hits = [];
 
         foreach ($this->nodes as $node) {
+            $label = GraphNodeLabel::tryFrom($node['label']);
+
+            if ($label instanceof GraphNodeLabel && ! $label->isSearchable()) {
+                continue;
+            }
+
             $caption = $this->caption($node['properties'], $node['id']);
-            $haystack = mb_strtolower($caption.' '.$node['id'].' '.$node['label']);
+            $aliases = $node['properties']['aliases'] ?? '';
+            $sourceId = $node['properties']['sourceId'] ?? '';
+            $haystack = mb_strtolower($caption.' '.$node['id'].' '.$node['label'].' '.(is_string($aliases) ? $aliases : '').' '.(is_string($sourceId) ? $sourceId : ''));
 
             if (! str_contains($haystack, $needle)) {
                 continue;
@@ -185,9 +214,60 @@ final class InMemoryGraphClient implements GraphClient
         ];
     }
 
+    public function findPersonId(string $sourceId): ?string
+    {
+        $needle = mb_trim($sourceId);
+
+        if ($needle === '') {
+            return null;
+        }
+
+        foreach ($this->nodes as $node) {
+            if ($node['label'] !== GraphNodeLabel::Person->value) {
+                continue;
+            }
+
+            $stored = $node['properties']['sourceId'] ?? null;
+
+            if ($node['id'] === $needle || (is_string($stored) && $stored === $needle)) {
+                return $node['id'];
+            }
+        }
+
+        return null;
+    }
+
+    private function isInspectOnlyHub(string $key): bool
+    {
+        $label = GraphNodeLabel::tryFrom($this->nodes[$key]['label'] ?? '');
+
+        return $label instanceof GraphNodeLabel && $label->isInspectOnlyHub();
+    }
+
+    private function isExpandable(string $key): bool
+    {
+        return ! $this->isInspectOnlyHub($key);
+    }
+
     private function nodeKey(GraphNodeLabel $label, string $id): string
     {
         return $label->value.':'.$id;
+    }
+
+    private function resolveKey(string $id, GraphNodeLabel $label): ?string
+    {
+        $key = $this->findKey($id, $label);
+
+        if ($key !== null || $label !== GraphNodeLabel::Other) {
+            return $key;
+        }
+
+        $this->mergeNode($label, $id, [
+            'id' => $id,
+            'caption' => $id,
+        ]);
+
+        return $this->findKey($id, $label);
     }
 
     private function findKey(string $id, GraphNodeLabel $label): ?string

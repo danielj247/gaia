@@ -1,8 +1,16 @@
 <script setup lang="ts">
-import { BookOpen, Folder, LayoutGrid, Menu, Search, Share2 } from '@lucide/vue'
+import {
+  BookOpen,
+  Database,
+  Folder,
+  LayoutGrid,
+  Menu,
+  Search,
+  Share2,
+} from '@lucide/vue'
 import { navigationMenuTriggerStyle } from '@/components/ui/navigation-menu'
 import { toUrl } from '@/lib/utils'
-import { dashboard, explorer } from '@/routes'
+import { dashboard, dumps, explorer } from '@/routes'
 import type { BreadcrumbItem, NavItem } from '@/types'
 
 type Props = {
@@ -32,6 +40,11 @@ const mainNavItems: NavItem[] = [
     href: explorer(),
     icon: Share2,
   },
+  {
+    title: 'Dumps',
+    href: dumps(),
+    icon: Database,
+  },
 ]
 
 const rightNavItems: NavItem[] = [
@@ -42,7 +55,7 @@ const rightNavItems: NavItem[] = [
   },
   {
     title: 'Documentation',
-    href: 'https://www.opensanctions.org/datasets/us_ofac_sdn/',
+    href: 'https://www.opensanctions.org/datasets/',
     icon: BookOpen,
   },
 ]

@@ -15,6 +15,8 @@ it('merges nodes and edges and searches captions', function (): void {
 
     expect($graph->search('ada', 10))->toHaveCount(1)
         ->and($graph->search('', 10))->toBeEmpty()
+        ->and($graph->findPersonId('p1'))->toBe('p1')
+        ->and($graph->findPersonId('o1'))->toBeNull()
         ->and($graph->stats())->toBe(['nodes' => 2, 'edges' => 1]);
 
     $neighborhood = $graph->neighborhood('p1', 1, 10);
@@ -57,4 +59,61 @@ it('finds interval endpoints by id when the label is other', function (): void {
     $graph->mergeEdge(GraphEdgeType::Owns, GraphNodeLabel::Other, 'p1', GraphNodeLabel::Other, 'o1');
 
     expect($graph->stats()['edges'])->toBe(1);
+});
+
+it('matches aliases and does not expand dump hubs', function (): void {
+    $graph = new InMemoryGraphClient();
+    $graph->mergeNode(GraphNodeLabel::Person, 'p1', [
+        'caption' => 'Ada Example',
+        'aliases' => 'Ada AKA',
+        'sourceId' => 'ofac-100',
+    ]);
+    $graph->mergeNode(GraphNodeLabel::Organization, 'o1', ['caption' => 'Example Holdings']);
+    $graph->mergeNode(GraphNodeLabel::Dump, 'd1', ['caption' => 'us_ofac_sdn']);
+    $graph->mergeNode(GraphNodeLabel::Country, 'c1', ['caption' => 'Exampleland']);
+    $graph->mergeNode(GraphNodeLabel::Sanction, 's1', ['caption' => 'OFAC-SDN']);
+    $graph->mergeNode(GraphNodeLabel::Person, 'p2', ['caption' => 'Other Person']);
+    $graph->mergeEdge(GraphEdgeType::Owns, GraphNodeLabel::Person, 'p1', GraphNodeLabel::Organization, 'o1');
+    $graph->mergeEdge(GraphEdgeType::AppearsInDump, GraphNodeLabel::Person, 'p1', GraphNodeLabel::Dump, 'd1');
+    $graph->mergeEdge(GraphEdgeType::AppearsInDump, GraphNodeLabel::Person, 'p2', GraphNodeLabel::Dump, 'd1');
+    $graph->mergeEdge(GraphEdgeType::CitizenOf, GraphNodeLabel::Person, 'p1', GraphNodeLabel::Country, 'c1');
+    $graph->mergeEdge(GraphEdgeType::CitizenOf, GraphNodeLabel::Person, 'p2', GraphNodeLabel::Country, 'c1');
+    $graph->mergeEdge(GraphEdgeType::SanctionedUnder, GraphNodeLabel::Person, 'p1', GraphNodeLabel::Sanction, 's1');
+    $graph->mergeEdge(GraphEdgeType::SanctionedUnder, GraphNodeLabel::Person, 'p2', GraphNodeLabel::Sanction, 's1');
+
+    $neighborhood = $graph->neighborhood('p1', 2, 20);
+    $ids = collect($neighborhood->nodes)->pluck('id');
+
+    expect($graph->search('aka', 10))->toHaveCount(1)
+        ->and($graph->search('aka', 10)[0]['id'])->toBe('p1')
+        ->and($graph->search('ofac-100', 10)[0]['id'])->toBe('p1')
+        ->and($graph->findPersonId('ofac-100'))->toBe('p1')
+        ->and($graph->findPersonId(''))->toBeNull()
+        ->and($graph->search('us_ofac', 10))->toBeEmpty()
+        ->and($ids)->toContain('p1')
+        ->and($ids)->toContain('o1')
+        ->and($ids)->not->toContain('d1')
+        ->and($ids)->not->toContain('c1')
+        ->and($ids)->not->toContain('s1')
+        ->and($ids)->not->toContain('p2');
+
+    $hubIds = collect($graph->neighborhood('c1', 2, 20)->nodes)->pluck('id');
+
+    expect($hubIds)->toContain('c1')
+        ->and($hubIds)->not->toContain('p1')
+        ->and($hubIds)->not->toContain('p2');
+});
+
+it('creates other placeholders for interval endpoints and dedupes application ids', function (): void {
+    $graph = new InMemoryGraphClient();
+    $graph->mergeNode(GraphNodeLabel::Person, 'shared', ['caption' => 'Ada']);
+    $graph->mergeNode(GraphNodeLabel::Organization, 'shared', ['caption' => 'Ada Co']);
+    $graph->mergeEdge(GraphEdgeType::Owns, GraphNodeLabel::Other, 'shared', GraphNodeLabel::Other, 'missing-org');
+
+    $ids = collect($graph->neighborhood('shared', 1, 10)->nodes)->pluck('id');
+
+    expect($graph->stats()['edges'])->toBe(1)
+        ->and($ids->count())->toBe($ids->unique()->count())
+        ->and($ids)->toContain('shared')
+        ->and($ids)->toContain('missing-org');
 });

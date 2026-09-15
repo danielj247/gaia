@@ -30,6 +30,12 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::get('explorer/neighborhood/{id}', [Graph\NeighborhoodController::class, 'show'])
         ->where('id', '[^/]+')
         ->name('explorer.neighborhood');
+    Route::post('explorer/same-as', [Graph\SameAsController::class, 'store'])
+        ->name('explorer.same-as');
+    Route::get('dumps', [Graph\DumpController::class, 'index'])->name('dumps');
+    Route::get('dumps/{dump}', [Graph\DumpController::class, 'show'])->name('dumps.show');
+    Route::get('dumps/{dump}/progress', [Graph\DumpProgressController::class, 'show'])
+        ->name('dumps.progress');
 });
 
 Route::middleware('auth')->group(function (): void {

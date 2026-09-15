@@ -29,6 +29,16 @@ final readonly class FollowTheMoneyMapper
 
     /**
      * @param  array<string, mixed>  $entity
+     */
+    public function isInterval(array $entity): bool
+    {
+        $schema = $this->string($entity['schema'] ?? null);
+
+        return $schema !== null && in_array($schema, self::INTERVAL_SCHEMAS, true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $entity
      * @return array{nodes: list<array{label: GraphNodeLabel, id: string, properties: array<string, bool|float|int|string|null>}>, edges: list<array{type: GraphEdgeType, fromLabel: GraphNodeLabel, fromId: string, toLabel: GraphNodeLabel, toId: string, properties: array<string, bool|float|int|string|null>}>}
      */
     public function map(array $entity, string $dumpId): array
@@ -40,7 +50,7 @@ final readonly class FollowTheMoneyMapper
             return ['nodes' => [], 'edges' => []];
         }
 
-        if (in_array($schema, self::INTERVAL_SCHEMAS, true)) {
+        if ($this->isInterval($entity)) {
             return $this->mapInterval($entity, $id, $schema, $dumpId);
         }
 
@@ -62,6 +72,7 @@ final readonly class FollowTheMoneyMapper
             'id' => $id,
             'properties' => [
                 'id' => $id,
+                'sourceId' => $id,
                 'caption' => $caption,
                 'schema' => $schema,
                 'name' => $this->first($properties, 'name') ?? $caption,
@@ -166,6 +177,14 @@ final readonly class FollowTheMoneyMapper
             }
 
             if ($this->looksLikeEntityId($address)) {
+                $nodes[] = [
+                    'label' => GraphNodeLabel::Address,
+                    'id' => $address,
+                    'properties' => [
+                        'id' => $address,
+                        'caption' => $address,
+                    ],
+                ];
                 $edges[] = [
                     'type' => GraphEdgeType::LocatedAt,
                     'fromLabel' => $label,
@@ -273,8 +292,10 @@ final readonly class FollowTheMoneyMapper
 
         foreach ($fields as $field) {
             foreach ($properties[$field] ?? [] as $value) {
-                if (is_string($value) && $value !== '') {
-                    $ids[] = $value;
+                $id = $this->entityRef($value);
+
+                if ($id !== null) {
+                    $ids[] = $id;
                 }
             }
         }
@@ -330,6 +351,21 @@ final readonly class FollowTheMoneyMapper
     private function string(mixed $value): ?string
     {
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function entityRef(mixed $value): ?string
+    {
+        if (is_string($value) && $value !== '') {
+            return $value;
+        }
+
+        if (! is_array($value)) {
+            return null;
+        }
+
+        $id = $value['id'] ?? null;
+
+        return is_string($id) && $id !== '' ? $id : null;
     }
 
     private function identifierId(IdentifierKind $kind, string $value): string

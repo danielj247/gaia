@@ -39,4 +39,6 @@ interface GraphClient
      * @return array{nodes: int, edges: int}
      */
     public function stats(): array;
+
+    public function findPersonId(string $sourceId): ?string;
 }

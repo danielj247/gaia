@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import Graph from 'graphology'
+import { random } from 'graphology-layout'
+import forceAtlas2 from 'graphology-layout-forceatlas2'
 import Sigma from 'sigma'
+import { colorForLabel, nodeColors } from '@/lib/graphColors'
 
 type GraphNode = {
   id: string
@@ -20,103 +23,249 @@ type GraphEdge = {
 const props = defineProps<{
   nodes: GraphNode[]
   edges: GraphEdge[]
+  selectedId?: string | null
 }>()
 
 const emit = defineEmits<{
   select: [node: GraphNode]
+  error: [message: string]
 }>()
 
 const container = ref<HTMLDivElement | null>(null)
+let graph: Graph | null = null
 let sigma: Sigma | null = null
+let observer: ResizeObserver | null = null
 
-const colors: Record<string, string> = {
-  Person: '#60a5fa',
-  Organization: '#c084fc',
-  Identifier: '#fbbf24',
-  Address: '#34d399',
-  Country: '#fb7185',
-  Sanction: '#f87171',
-  Dump: '#94a3b8',
-  Vessel: '#22d3ee',
-  Aircraft: '#a3e635',
-  CryptoWallet: '#e879f9',
-  Other: '#cbd5e1',
+function graphInstance(): Graph {
+  graph ??= new Graph({ multi: true, type: 'directed' })
+
+  return graph
 }
 
-function paint(nextNodes: GraphNode[], nextEdges: GraphEdge[]): void {
-  const next = new Graph({ multi: true, type: 'directed' })
+function teardown(): void {
+  sigma?.kill()
+  sigma = null
+  graph = null
+}
 
-  nextNodes.forEach((node, index) => {
-    const angle = (2 * Math.PI * index) / Math.max(nextNodes.length, 1)
-    next.addNode(node.id, {
-      x: Math.cos(angle) * 120,
-      y: Math.sin(angle) * 120,
+function ensureRenderer(host: HTMLDivElement, next: Graph): Sigma | null {
+  if (sigma) {
+    return sigma
+  }
+
+  try {
+    sigma = new Sigma(next, host, {
+      allowInvalidContainer: true,
+      renderLabels: true,
+      renderEdgeLabels: true,
+      defaultEdgeType: 'arrow',
+      labelRenderedSizeThreshold: 4,
+      defaultNodeColor: nodeColors.Other,
+      defaultEdgeColor: '#64748b',
+      labelColor: { color: '#e2e8f0' },
+      edgeLabelColor: { color: '#94a3b8' },
+    })
+
+    sigma.on('clickNode', ({ node }) => {
+      const attributes = next.getNodeAttributes(node)
+      emit('select', {
+        id: node,
+        label: String(attributes.nodeLabel ?? 'Other'),
+        caption: String(attributes.caption ?? node),
+        properties: (attributes.properties ?? {}) as Record<string, unknown>,
+      })
+    })
+
+    return sigma
+  } catch {
+    teardown()
+    emit(
+      'error',
+      'The graph canvas failed to start. Resize the window and try again.',
+    )
+
+    return null
+  }
+}
+
+function seedPosition(
+  next: Graph,
+  selectedId: string | null | undefined,
+): { x: number; y: number } {
+  if (selectedId && next.hasNode(selectedId)) {
+    const seed = next.getNodeAttributes(selectedId)
+
+    return {
+      x: Number(seed.x ?? 0) + (Math.random() - 0.5) * 40,
+      y: Number(seed.y ?? 0) + (Math.random() - 0.5) * 40,
+    }
+  }
+
+  return {
+    x: (Math.random() - 0.5) * 200,
+    y: (Math.random() - 0.5) * 200,
+  }
+}
+
+function layout(next: Graph, added: number): void {
+  if (next.order === 0) {
+    return
+  }
+
+  const missing = next.filterNodes(
+    (_id, attributes) =>
+      typeof attributes.x !== 'number' || typeof attributes.y !== 'number',
+  )
+
+  if (missing.length > 0) {
+    random.assign(next)
+  }
+
+  if (added === 0) {
+    return
+  }
+
+  const settings = forceAtlas2.inferSettings(next)
+  settings.barnesHutOptimize = next.order > 200
+
+  forceAtlas2.assign(next, {
+    iterations: Math.min(80, 30 + added),
+    settings,
+  })
+}
+
+function animateToSelected(selectedId: string | null | undefined): void {
+  if (!sigma || !selectedId || !graph?.hasNode(selectedId)) {
+    return
+  }
+
+  const display = sigma.getNodeDisplayData(selectedId)
+
+  if (!display) {
+    return
+  }
+
+  sigma.getCamera().animate(display, { duration: 500 })
+}
+
+function sync(nextNodes: GraphNode[], nextEdges: GraphEdge[]): void {
+  const host = container.value
+
+  if (!host || host.clientWidth === 0 || host.clientHeight === 0) {
+    return
+  }
+
+  if (nextNodes.length === 0) {
+    graph?.clear()
+    sigma?.refresh()
+
+    return
+  }
+
+  const next = graphInstance()
+  const incomingNodes = new Set(nextNodes.map((node) => node.id))
+  let added = 0
+
+  next.forEachNode((id) => {
+    if (!incomingNodes.has(id)) {
+      next.dropNode(id)
+    }
+  })
+
+  nextNodes.forEach((node) => {
+    const shared = {
       size: node.label === 'Person' || node.label === 'Organization' ? 10 : 6,
       label: node.caption,
-      color: colors[node.label] ?? colors.Other,
+      color: colorForLabel(node.label),
       caption: node.caption,
       nodeLabel: node.label,
       properties: node.properties,
-    })
-  })
+    }
 
-  nextEdges.forEach((edge) => {
-    if (!next.hasNode(edge.source) || !next.hasNode(edge.target)) {
+    if (next.hasNode(node.id)) {
+      next.mergeNode(node.id, shared)
+
       return
     }
 
-    next.addEdge(edge.source, edge.target, {
-      id: edge.id,
-      type: edge.type,
-      label: edge.type,
+    const position = seedPosition(next, props.selectedId)
+    next.mergeNode(node.id, { ...shared, ...position })
+    added++
+  })
+
+  const incomingEdges = new Set(nextEdges.map((edge) => edge.id))
+
+  next.forEachEdge((id) => {
+    if (!incomingEdges.has(id)) {
+      next.dropEdge(id)
+    }
+  })
+
+  nextEdges.forEach((edge) => {
+    if (
+      !next.hasNode(edge.source) ||
+      !next.hasNode(edge.target) ||
+      edge.source === edge.target
+    ) {
+      return
+    }
+
+    next.mergeEdgeWithKey(edge.id, edge.source, edge.target, {
+      kind: edge.type,
+      label: edge.type.replaceAll('_', ' '),
       size: 1,
       color: '#64748b',
     })
   })
 
-  if (sigma) {
-    sigma.kill()
-    sigma = null
-  }
+  layout(next, added)
 
-  if (!container.value) {
+  const renderer = ensureRenderer(host, next)
+
+  if (!renderer) {
     return
   }
 
-  sigma = new Sigma(next, container.value, {
-    renderLabels: true,
-    labelRenderedSizeThreshold: 4,
-    defaultNodeColor: colors.Other,
-    defaultEdgeColor: '#64748b',
-    labelColor: { color: '#e2e8f0' },
-  })
-
-  sigma.on('clickNode', ({ node }) => {
-    const attributes = next.getNodeAttributes(node)
-    emit('select', {
-      id: node,
-      label: String(attributes.nodeLabel ?? 'Other'),
-      caption: String(attributes.caption ?? node),
-      properties: (attributes.properties ?? {}) as Record<string, unknown>,
-    })
-  })
+  renderer.refresh()
+  animateToSelected(props.selectedId)
 }
 
 watch(
   () => [props.nodes, props.edges] as const,
   ([nodes, edges]) => {
-    paint(nodes, edges)
+    sync(nodes, edges)
   },
   { deep: true },
 )
 
+watch(
+  () => props.selectedId,
+  (selectedId) => {
+    animateToSelected(selectedId)
+  },
+)
+
 onMounted(() => {
-  paint(props.nodes, props.edges)
+  observer = new ResizeObserver(() => {
+    if (sigma) {
+      sigma.resize()
+      return
+    }
+
+    sync(props.nodes, props.edges)
+  })
+
+  if (container.value) {
+    observer.observe(container.value)
+  }
+
+  sync(props.nodes, props.edges)
 })
 
 onBeforeUnmount(() => {
-  sigma?.kill()
-  sigma = null
+  observer?.disconnect()
+  observer = null
+  teardown()
 })
 </script>
 

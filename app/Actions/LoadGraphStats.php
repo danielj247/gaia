@@ -16,18 +16,27 @@ final readonly class LoadGraphStats
     public function handle(): GraphStatsData
     {
         $stats = $this->graph->stats();
-        $dump = Dump::query()
-            ->where('status', DumpStatus::Completed)
-            ->latest()
-            ->first();
+        $datasets = [];
+
+        foreach (
+            Dump::query()
+                ->where('status', DumpStatus::Completed)
+                ->orderBy('dataset')
+                ->pluck('dataset') as $dataset
+        ) {
+            if (! is_string($dataset) || $dataset === '' || in_array($dataset, $datasets, true)) {
+                continue;
+            }
+
+            $datasets[] = $dataset;
+        }
 
         return new GraphStatsData(
             nodes: $stats['nodes'],
             edges: $stats['edges'],
-            attribution: $dump === null
-                ? config()->string('graph.opensanctions.attribution')
-                : $dump->attribution,
-            dataset: $dump?->dataset,
+            attribution: config()->string('graph.opensanctions.attribution'),
+            dataset: $datasets === [] ? null : implode(', ', $datasets),
+            datasets: $datasets,
         );
     }
 }

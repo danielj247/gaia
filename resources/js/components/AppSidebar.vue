@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { BookOpen, FolderGit2, LayoutGrid, Share2 } from '@lucide/vue'
-import { dashboard, explorer } from '@/routes'
+import { BookOpen, Database, FolderGit2, LayoutGrid, Share2 } from '@lucide/vue'
+import { dashboard, dumps, explorer } from '@/routes'
 import type { NavItem } from '@/types'
 
 const mainNavItems: NavItem[] = [
@@ -14,6 +14,11 @@ const mainNavItems: NavItem[] = [
     href: explorer(),
     icon: Share2,
   },
+  {
+    title: 'Dumps',
+    href: dumps(),
+    icon: Database,
+  },
 ]
 
 const footerNavItems: NavItem[] = [
@@ -24,7 +29,7 @@ const footerNavItems: NavItem[] = [
   },
   {
     title: 'Documentation',
-    href: 'https://www.opensanctions.org/datasets/us_ofac_sdn/',
+    href: 'https://www.opensanctions.org/datasets/',
     icon: BookOpen,
   },
 ]

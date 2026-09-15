@@ -15,8 +15,15 @@ final readonly class FetchOpenSanctionsDump
     {
         $dataset = mb_trim($dataset);
 
-        if ($dataset === '' || ! preg_match('/^[a-z0-9_]+$/', $dataset)) {
-            throw new RuntimeException('Dataset must be a lowercase OpenSanctions dataset id.');
+        $allowed = config('graph.opensanctions.datasets');
+
+        if (
+            $dataset === ''
+            || ! preg_match('/^[a-z0-9_]+$/', $dataset)
+            || ! is_array($allowed)
+            || ! in_array($dataset, $allowed, true)
+        ) {
+            throw new RuntimeException('Dataset must be a published OpenSanctions id: us_ofac_sdn or sanctions.');
         }
 
         $attribution = config()->string('graph.opensanctions.attribution');
@@ -45,7 +52,7 @@ final readonly class FetchOpenSanctionsDump
 
         $path = $directory.'/'.$dump->id.'.ftm.jsonl';
 
-        $response = Http::timeout(120)
+        $response = Http::timeout(config()->integer('graph.ingest.download_timeout'))
             ->sink($path)
             ->get($url);
 
@@ -71,19 +78,11 @@ final readonly class FetchOpenSanctionsDump
 
     private function normalizeToJsonLines(string $path): void
     {
-        $contents = file_get_contents($path);
-
-        if (! is_string($contents) || $contents === '') {
+        if (! $this->opensWithJsonArray($path)) {
             return;
         }
 
-        $trimmed = mb_ltrim($contents);
-
-        if (! str_starts_with($trimmed, '[')) {
-            return;
-        }
-
-        $decoded = json_decode($contents, true);
+        $decoded = json_decode((string) file_get_contents($path), true);
 
         if (! is_array($decoded)) {
             return;
@@ -100,5 +99,16 @@ final readonly class FetchOpenSanctionsDump
         }
 
         file_put_contents($path, implode("\n", $lines)."\n");
+    }
+
+    /**
+     * FollowTheMoney dumps are JSON lines and run to hundreds of megabytes, so only
+     * the head is inspected here; the whole file is read when it is a JSON array.
+     */
+    private function opensWithJsonArray(string $path): bool
+    {
+        $head = file_get_contents($path, false, null, 0, 1024);
+
+        return is_string($head) && str_starts_with(mb_ltrim($head), '[');
     }
 }

@@ -17,4 +17,5 @@ enum GraphEdgeType: string
     case AppearsInDump = 'APPEARS_IN_DUMP';
     case Controls = 'CONTROLS';
     case FamilyOf = 'FAMILY_OF';
+    case SameAs = 'SAME_AS';
 }

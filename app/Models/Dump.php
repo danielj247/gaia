@@ -7,9 +7,11 @@ namespace App\Models;
 use App\Enums\DumpStatus;
 use Carbon\CarbonInterface;
 use Database\Factories\DumpFactory;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property-read string $id
@@ -25,6 +27,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property-read string|null $error
  * @property-read CarbonInterface $created_at
  * @property-read CarbonInterface $updated_at
+ * @property-read Collection<int, DumpChunk> $chunks
+ * @property-read Collection<int, DumpError> $errors
  */
 final class Dump extends Model
 {
@@ -55,5 +59,21 @@ final class Dump extends Model
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];
+    }
+
+    /**
+     * @return HasMany<DumpChunk, $this>
+     */
+    public function chunks(): HasMany
+    {
+        return $this->hasMany(DumpChunk::class);
+    }
+
+    /**
+     * @return HasMany<DumpError, $this>
+     */
+    public function errors(): HasMany
+    {
+        return $this->hasMany(DumpError::class);
     }
 }

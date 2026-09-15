@@ -20,6 +20,13 @@ final readonly class Neo4jGraphClient implements GraphClient
                 sprintf('CREATE CONSTRAINT %s_id IF NOT EXISTS FOR (n:%s) REQUIRE n.id IS UNIQUE', mb_strtolower($name), $name),
             );
         }
+
+        $this->session->run(
+            sprintf(
+                'CREATE INDEX person_source_id IF NOT EXISTS FOR (n:%s) ON (n.sourceId)',
+                GraphNodeLabel::Person->value,
+            ),
+        );
     }
 
     /**
@@ -47,8 +54,29 @@ final readonly class Neo4jGraphClient implements GraphClient
         string $toId,
         array $properties = [],
     ): void {
-        $fromSelector = $fromLabel === GraphNodeLabel::Other ? 'a' : 'a:'.$fromLabel->value;
-        $toSelector = $toLabel === GraphNodeLabel::Other ? 'b' : 'b:'.$toLabel->value;
+        if ($fromLabel === GraphNodeLabel::Other && $toLabel === GraphNodeLabel::Other) {
+            $this->session->run(
+                sprintf(
+                    'MERGE (a {id: $fromId})
+                    ON CREATE SET a:Other, a.id = $fromId, a.caption = $fromId
+                    MERGE (b {id: $toId})
+                    ON CREATE SET b:Other, b.id = $toId, b.caption = $toId
+                    MERGE (a)-[r:%s]->(b)
+                    SET r += $props',
+                    $type->value,
+                ),
+                [
+                    'fromId' => $fromId,
+                    'toId' => $toId,
+                    'props' => ParameterHelper::asMap($properties),
+                ],
+            );
+
+            return;
+        }
+
+        $fromSelector = 'a:'.$fromLabel->value;
+        $toSelector = 'b:'.$toLabel->value;
 
         $this->session->run(
             sprintf(
@@ -73,8 +101,12 @@ final readonly class Neo4jGraphClient implements GraphClient
         $rows = $this->session->run(
             sprintf(
                 'MATCH (start {id: $id})
-                OPTIONAL MATCH (start)-[*1..%d]-(seen)
-                WITH collect(DISTINCT start) + [n IN collect(DISTINCT seen) WHERE n IS NOT NULL] AS raw
+                OPTIONAL MATCH path = (start)-[*1..%d]-(candidate)
+                WHERE NOT (start:Dump OR start:Country OR start:Sanction)
+                  AND ALL(n IN nodes(path) WHERE n = start OR NOT (n:Dump OR n:Country OR n:Sanction))
+                WITH start, collect(DISTINCT CASE WHEN candidate IS NULL OR candidate:Dump OR candidate:Country OR candidate:Sanction THEN NULL ELSE candidate END) AS seen
+                WITH start, [n IN seen WHERE n IS NOT NULL] AS neighbors
+                WITH [start] + neighbors AS raw
                 WITH raw[..$limit] AS nodes, size(raw) > $limit AS truncated
                 UNWIND nodes AS a
                 OPTIONAL MATCH (a)-[r]-(b)
@@ -104,8 +136,13 @@ final readonly class Neo4jGraphClient implements GraphClient
 
         $rows = $this->session->run(
             'MATCH (n)
-            WHERE toLower(coalesce(n.caption, n.name, n.value, n.id, "")) CONTAINS toLower($query)
-               OR toLower(n.id) CONTAINS toLower($query)
+            WHERE NOT (n:Dump OR n:Country OR n:Sanction)
+              AND (
+                toLower(coalesce(n.caption, n.name, n.value, n.id, "")) CONTAINS toLower($query)
+                OR toLower(coalesce(n.aliases, "")) CONTAINS toLower($query)
+                OR toLower(coalesce(n.sourceId, "")) CONTAINS toLower($query)
+                OR toLower(n.id) CONTAINS toLower($query)
+              )
             RETURN n
             LIMIT $limit',
             [
@@ -147,6 +184,27 @@ final readonly class Neo4jGraphClient implements GraphClient
         ];
     }
 
+    public function findPersonId(string $sourceId): ?string
+    {
+        $needle = mb_trim($sourceId);
+
+        if ($needle === '') {
+            return null;
+        }
+
+        $rows = $this->session->run(
+            'MATCH (p:Person)
+            WHERE p.sourceId = $sourceId OR p.id = $sourceId
+            RETURN p.id AS id
+            LIMIT 1',
+            ['sourceId' => $needle],
+        );
+
+        $id = $rows[0]['id'] ?? null;
+
+        return is_string($id) && $id !== '' ? $id : null;
+    }
+
     /**
      * @param  list<array<string, mixed>>  $rows
      */
@@ -157,7 +215,7 @@ final readonly class Neo4jGraphClient implements GraphClient
         $truncated = false;
 
         foreach ($rows as $row) {
-            $truncated = $truncated || $row['truncated'] === true;
+            $truncated = $truncated || $this->isTruthy($row['truncated'] ?? false);
 
             foreach (['a', 'b'] as $key) {
                 $node = $this->nodeFromValue($row[$key] ?? null);
@@ -221,21 +279,21 @@ final readonly class Neo4jGraphClient implements GraphClient
      */
     private function edgeFromValue(mixed $value, array $row = []): ?array
     {
-        $type = is_string($row['relType'] ?? null) ? $row['relType'] : null;
-        $fromId = is_string($row['source'] ?? null) ? $row['source'] : null;
-        $toId = is_string($row['target'] ?? null) ? $row['target'] : null;
+        $type = $this->stringId($row['relType'] ?? null);
+        $fromId = $this->stringId($row['source'] ?? null) ?? $this->nodeApplicationId($row['a'] ?? null);
+        $toId = $this->stringId($row['target'] ?? null) ?? $this->nodeApplicationId($row['b'] ?? null);
         $properties = [];
 
         if (is_array($value)) {
-            $type ??= is_string($value['type'] ?? null) ? $value['type'] : null;
-            $fromId ??= is_string($value['source'] ?? $value['start'] ?? null) ? ($value['source'] ?? $value['start']) : null;
-            $toId ??= is_string($value['end'] ?? $value['target'] ?? null) ? ($value['end'] ?? $value['target']) : null;
+            $type ??= $this->stringId($value['type'] ?? null);
+            $fromId ??= $this->stringId($value['source'] ?? null);
+            $toId ??= $this->stringId($value['target'] ?? null);
             $properties = is_array($value['properties'] ?? null)
                 ? $this->stringKeyed($value['properties'])
                 : [];
         }
 
-        if (! is_string($type) || ! is_string($fromId) || ! is_string($toId)) {
+        if ($type === null || $fromId === null || $toId === null) {
             return null;
         }
 
@@ -251,6 +309,23 @@ final readonly class Neo4jGraphClient implements GraphClient
     private function intValue(mixed $value): int
     {
         return is_numeric($value) ? (int) $value : 0;
+    }
+
+    private function stringId(mixed $value): ?string
+    {
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function nodeApplicationId(mixed $value): ?string
+    {
+        $node = $this->nodeFromValue($value);
+
+        return $node === null ? null : $node['id'];
+    }
+
+    private function isTruthy(mixed $value): bool
+    {
+        return in_array($value, [true, 1, '1', 'true'], true);
     }
 
     /**

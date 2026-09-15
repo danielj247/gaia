@@ -27,6 +27,7 @@ it('maps a person with identifiers address country and sanction', function (): v
 
     expect($mapped['nodes'])->not->toBeEmpty()
         ->and(collect($mapped['nodes'])->firstWhere('label', GraphNodeLabel::Person)['id'])->toBe('ofac-100')
+        ->and(collect($mapped['nodes'])->firstWhere('label', GraphNodeLabel::Person)['properties']['sourceId'])->toBe('ofac-100')
         ->and(collect($mapped['edges'])->contains(fn (array $edge): bool => $edge['type'] === GraphEdgeType::HasIdentifier))->toBeTrue()
         ->and(collect($mapped['edges'])->contains(fn (array $edge): bool => $edge['type'] === GraphEdgeType::CitizenOf))->toBeTrue()
         ->and(collect($mapped['edges'])->contains(fn (array $edge): bool => $edge['type'] === GraphEdgeType::LocatedAt))->toBeTrue()
@@ -46,9 +47,29 @@ it('maps ownership intervals without creating nodes', function (): void {
         ],
     ], 'dump-1');
 
-    expect($mapped['nodes'])->toBeEmpty()
+    expect($mapper->isInterval(['schema' => 'Ownership']))->toBeTrue()
+        ->and($mapper->isInterval(['schema' => 'Person']))->toBeFalse()
+        ->and($mapper->isInterval([]))->toBeFalse()
+        ->and($mapped['nodes'])->toBeEmpty()
         ->and($mapped['edges'])->toHaveCount(1)
         ->and($mapped['edges'][0]['type'])->toBe(GraphEdgeType::Owns)
+        ->and($mapped['edges'][0]['fromId'])->toBe('ofac-100')
+        ->and($mapped['edges'][0]['toId'])->toBe('ofac-200');
+});
+
+it('unwraps object-shaped interval references', function (): void {
+    $mapper = new FollowTheMoneyMapper();
+
+    $mapped = $mapper->map([
+        'id' => 'rel-obj',
+        'schema' => 'Ownership',
+        'properties' => [
+            'owner' => [12, ['id' => 'ofac-100', 'caption' => 'Ada'], ['id' => '']],
+            'asset' => [['id' => 'ofac-200']],
+        ],
+    ], 'dump-1');
+
+    expect($mapped['edges'])->toHaveCount(1)
         ->and($mapped['edges'][0]['fromId'])->toBe('ofac-100')
         ->and($mapped['edges'][0]['toId'])->toBe('ofac-200');
 });
@@ -85,7 +106,8 @@ it('maps address entity references onto located-at edges', function (): void {
         ],
     ], 'dump-1');
 
-    expect(collect($mapped['edges'])->firstWhere('type', GraphEdgeType::LocatedAt)['toId'])->toBe('addr-99');
+    expect(collect($mapped['edges'])->firstWhere('type', GraphEdgeType::LocatedAt)['toId'])->toBe('addr-99')
+        ->and(collect($mapped['nodes'])->firstWhere('label', GraphNodeLabel::Address)['id'])->toBe('addr-99');
 });
 
 it('maps directorship family and generic intervals', function (): void {

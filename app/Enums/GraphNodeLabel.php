@@ -41,4 +41,16 @@ enum GraphNodeLabel: string
             && $this !== self::Country
             && $this !== self::Dump;
     }
+
+    public function isSearchable(): bool
+    {
+        return ! $this->isInspectOnlyHub();
+    }
+
+    public function isInspectOnlyHub(): bool
+    {
+        return $this === self::Dump
+            || $this === self::Country
+            || $this === self::Sanction;
+    }
 }
