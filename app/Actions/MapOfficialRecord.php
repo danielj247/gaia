@@ -13,6 +13,8 @@ final readonly class MapOfficialRecord
         private MapUkSanctionsRow $mapUk,
         private MapOfacSdnEntry $mapOfac,
         private MapEuFsfEntity $mapEu,
+        private MapCompaniesHouseCompany $mapCompanies,
+        private MapCompaniesHousePsc $mapPsc,
     ) {}
 
     /**
@@ -25,6 +27,8 @@ final readonly class MapOfficialRecord
             'uksl' => $this->mapUk->handle($entity, $dumpId),
             'ofac_sdn' => $this->mapOfac->handle($entity, $dumpId),
             'eu_fsf' => $this->mapEu->handle($entity, $dumpId),
+            'ch_companies' => $this->mapCompanies->handle($entity, $dumpId),
+            'ch_psc' => $this->mapPsc->handle($entity, $dumpId),
             default => ['nodes' => [], 'edges' => []],
         };
     }

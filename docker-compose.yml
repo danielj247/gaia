@@ -7,8 +7,12 @@ services:
       - "7687:7687"
     environment:
       NEO4J_AUTH: neo4j/gaia-dev
+      NEO4J_server_memory_heap_initial__size: 2G
+      NEO4J_server_memory_heap_max__size: 2G
+      NEO4J_server_memory_pagecache_size: 4G
     volumes:
-      - gaia-neo4j-data:/data
+      - neo4j-data:/data
 
 volumes:
-  gaia-neo4j-data:
+  neo4j-data:
+    name: gaia-neo4j-data

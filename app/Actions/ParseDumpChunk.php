@@ -94,7 +94,7 @@ final readonly class ParseDumpChunk
 
                 $entitiesRead++;
 
-                $official = $dump->source === 'official';
+                $official = $dump->source === 'official' || $dump->source === 'companies_house';
 
                 if ($official ? $intervals : $this->mapper->isInterval($entity) !== $intervals) {
                     continue;

@@ -12,6 +12,7 @@ enum IdentifierKind: string
     case NationalId = 'national_id';
     case TaxNumber = 'tax_number';
     case RegistrationNumber = 'registration_number';
+    case CompanyNumber = 'company_number';
     case Imo = 'imo';
     case Lei = 'lei';
     case SwiftBic = 'swift_bic';
@@ -37,6 +38,7 @@ enum IdentifierKind: string
             self::NationalId => ['idNumber'],
             self::TaxNumber => ['innCode', 'taxNumber', 'vatCode'],
             self::RegistrationNumber => ['registrationNumber', 'ogrnCode', 'okpoCode', 'dunsCode'],
+            self::CompanyNumber => [],
             self::Imo => ['imoNumber'],
             self::Lei => ['leiCode'],
             self::SwiftBic => ['swiftBic'],

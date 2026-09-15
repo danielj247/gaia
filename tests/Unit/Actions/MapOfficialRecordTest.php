@@ -16,8 +16,15 @@ it('routes official datasets and returns an empty graph for an unknown list', fu
     $uk = $mapper->handle('uksl', ['Unique ID' => 'GBR001', 'Designation Type' => 'Individual', 'Name 6' => 'Ada'], 'dump-1');
     $unknown = $mapper->handle('crime', ['id' => 'x'], 'dump-1');
 
+    $company = $mapper->handle('ch_companies', ['CompanyNumber' => '00000006', 'CompanyName' => 'EXAMPLE ONE LTD'], 'dump-1');
+    $psc = $mapper->handle('ch_psc', companiesHousePscRecord(0), 'dump-1');
+
     expect(collect($uk['nodes'])->contains(fn (array $node): bool => $node['label'] === GraphNodeLabel::Person))->toBeTrue()
-        ->and($unknown)->toBe(['nodes' => [], 'edges' => []]);
+        ->and($unknown)->toBe(['nodes' => [], 'edges' => []])
+        ->and(collect($company['nodes'])->contains(fn (array $node): bool => $node['label'] === GraphNodeLabel::Organization
+            && $node['id'] === '00000006'))->toBeTrue()
+        ->and(collect($company['nodes'])->contains(fn (array $node): bool => $node['label'] === GraphNodeLabel::Person))->toBeFalse()
+        ->and(collect($psc['nodes'])->contains(fn (array $node): bool => $node['label'] === GraphNodeLabel::Person))->toBeTrue();
 });
 
 it('ignores non-string official allow-list entries', function (): void {
