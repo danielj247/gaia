@@ -26,6 +26,38 @@ it('merges nodes and edges and searches captions', function (): void {
         ->and($neighborhood->truncated)->toBeFalse();
 });
 
+it('merges a mapped graph exactly like the equivalent single merges', function (): void {
+    $mapped = [
+        'nodes' => [
+            ['label' => GraphNodeLabel::Person, 'id' => 'p1', 'properties' => ['caption' => 'Ada']],
+            ['label' => GraphNodeLabel::Organization, 'id' => 'o1', 'properties' => ['caption' => 'Holdings']],
+            ['label' => GraphNodeLabel::Organization, 'id' => 'o1', 'properties' => ['status' => 'active']],
+        ],
+        'edges' => [
+            ['type' => GraphEdgeType::Owns, 'fromLabel' => GraphNodeLabel::Person, 'fromId' => 'p1', 'toLabel' => GraphNodeLabel::Organization, 'toId' => 'o1', 'properties' => ['share' => '50%']],
+            ['type' => GraphEdgeType::RelatedTo, 'fromLabel' => GraphNodeLabel::Other, 'fromId' => 'p1', 'toLabel' => GraphNodeLabel::Other, 'toId' => 'missing', 'properties' => []],
+        ],
+    ];
+
+    $batched = new InMemoryGraphClient();
+    $batched->mergeGraph($mapped);
+
+    $single = new InMemoryGraphClient();
+
+    foreach ($mapped['nodes'] as $node) {
+        $single->mergeNode($node['label'], $node['id'], $node['properties']);
+    }
+
+    foreach ($mapped['edges'] as $edge) {
+        $single->mergeEdge($edge['type'], $edge['fromLabel'], $edge['fromId'], $edge['toLabel'], $edge['toId'], $edge['properties']);
+    }
+
+    expect($batched->stats())->toBe(['nodes' => 3, 'edges' => 2])
+        ->and($batched->neighborhood('p1', 2, 10))->toEqual($single->neighborhood('p1', 2, 10))
+        ->and(collect($batched->neighborhood('o1', 1, 10)->nodes)->firstWhere('id', 'o1')['properties'] ?? null)
+        ->toBe(['caption' => 'Holdings', 'id' => 'o1', 'status' => 'active']);
+});
+
 it('skips edges when an endpoint is missing', function (): void {
     $graph = new InMemoryGraphClient();
     $graph->mergeNode(GraphNodeLabel::Person, 'p1', ['caption' => 'Ada']);

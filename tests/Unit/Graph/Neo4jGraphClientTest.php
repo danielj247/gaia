@@ -69,6 +69,96 @@ it('writes constraints merge statements and neighborhood queries', function (): 
         )->toContain('NOT (n:Dump OR n:Country OR n:Sanction)');
 });
 
+it('merges a mapped graph with one unwind statement per node label and edge group', function (): void {
+    $session = new RecordingGraphSession([]);
+    $client = new Neo4jGraphClient($session);
+
+    $client->mergeGraph([
+        'nodes' => [
+            ['label' => GraphNodeLabel::Organization, 'id' => 'o2', 'properties' => ['caption' => 'Two Ltd']],
+            ['label' => GraphNodeLabel::Organization, 'id' => 'o1', 'properties' => ['caption' => 'One Ltd']],
+            ['label' => GraphNodeLabel::Dump, 'id' => 'd1', 'properties' => []],
+            ['label' => GraphNodeLabel::Country, 'id' => 'country:gb', 'properties' => ['caption' => 'GB']],
+            ['label' => GraphNodeLabel::Country, 'id' => 'country:gb', 'properties' => ['code' => 'GB']],
+        ],
+        'edges' => [
+            ['type' => GraphEdgeType::AppearsInDump, 'fromLabel' => GraphNodeLabel::Organization, 'fromId' => 'o1', 'toLabel' => GraphNodeLabel::Dump, 'toId' => 'd1', 'properties' => ['list' => 'ch_companies']],
+            ['type' => GraphEdgeType::AppearsInDump, 'fromLabel' => GraphNodeLabel::Organization, 'fromId' => 'o2', 'toLabel' => GraphNodeLabel::Dump, 'toId' => 'd1', 'properties' => []],
+            ['type' => GraphEdgeType::LocatedAt, 'fromLabel' => GraphNodeLabel::Organization, 'fromId' => 'o1', 'toLabel' => GraphNodeLabel::Country, 'toId' => 'country:gb', 'properties' => ['field' => 'country']],
+            ['type' => GraphEdgeType::RelatedTo, 'fromLabel' => GraphNodeLabel::Other, 'fromId' => 'o1', 'toLabel' => GraphNodeLabel::Other, 'toId' => 'x1', 'properties' => []],
+        ],
+    ]);
+
+    $statements = collect($session->statements());
+    $organizations = $statements->first(
+        fn (array $statement): bool => str_contains($statement['statement'], 'MERGE (n:Organization {id: row.id})'),
+    );
+    $countries = $statements->first(
+        fn (array $statement): bool => str_contains($statement['statement'], 'MERGE (n:Country {id: row.id})'),
+    );
+    $appears = $statements->first(
+        fn (array $statement): bool => str_contains($statement['statement'], 'MERGE (a)-[r:APPEARS_IN_DUMP]->(b)'),
+    );
+    $located = $statements->first(
+        fn (array $statement): bool => str_contains($statement['statement'], 'MERGE (a)-[r:LOCATED_AT]->(b)'),
+    );
+    $other = $statements->first(
+        fn (array $statement): bool => str_contains($statement['statement'], 'MERGE (a)-[r:RELATED_TO]->(b)'),
+    );
+
+    expect($statements)->toHaveCount(6)
+        ->and($organizations['statement'])->toStartWith('UNWIND $rows AS row')
+        ->and($organizations['statement'])->toContain('SET n += row.props')
+        ->and($organizations['parameters']['rows'])->toHaveCount(2)
+        ->and($organizations['parameters']['rows'][0]['id'])->toBe('o1')
+        ->and($organizations['parameters']['rows'][1]['id'])->toBe('o2')
+        ->and($organizations['parameters']['rows'][0]['props'])->toBeInstanceOf(CypherMap::class)
+        ->and($organizations['parameters']['rows'][0]['props']->toArray())->toBe(['caption' => 'One Ltd', 'id' => 'o1'])
+        ->and($countries['parameters']['rows'])->toHaveCount(1)
+        ->and($countries['parameters']['rows'][0]['props']->toArray())->toEqual(['caption' => 'GB', 'code' => 'GB', 'id' => 'country:gb'])
+        ->and($appears['statement'])->toStartWith('UNWIND $rows AS row')
+        ->and($appears['statement'])->toContain('MATCH (a:Organization {id: row.fromId}), (b:Dump {id: row.toId})')
+        ->and($appears['statement'])->toContain('SET r += row.props')
+        ->and($appears['parameters']['rows'])->toHaveCount(2)
+        ->and($appears['parameters']['rows'][1]['props'])->toBeInstanceOf(CypherMap::class)
+        ->and($located['statement'])->toContain('MATCH (a:Organization {id: row.fromId}), (b:Country {id: row.toId})')
+        ->and($other['statement'])->toContain('MERGE (a {id: row.fromId})')
+        ->and($other['statement'])->toContain('ON CREATE SET a:Other, a.id = row.fromId, a.caption = row.fromId')
+        ->and($other['statement'])->toContain('MERGE (b {id: row.toId})')
+        ->and($statements->search(fn (array $statement): bool => $statement === $appears))
+        ->toBeGreaterThan($statements->search(fn (array $statement): bool => $statement === $countries));
+});
+
+it('keeps numeric company numbers as string ids in batched rows', function (): void {
+    $session = new RecordingGraphSession([]);
+
+    new Neo4jGraphClient($session)->mergeGraph([
+        'nodes' => [
+            ['label' => GraphNodeLabel::Organization, 'id' => '12345678', 'properties' => ['caption' => 'Three Ltd']],
+            ['label' => GraphNodeLabel::Organization, 'id' => '6', 'properties' => ['caption' => 'One Ltd']],
+        ],
+        'edges' => [
+            ['type' => GraphEdgeType::AppearsInDump, 'fromLabel' => GraphNodeLabel::Organization, 'fromId' => '12345678', 'toLabel' => GraphNodeLabel::Dump, 'toId' => '01', 'properties' => []],
+        ],
+    ]);
+
+    $rows = collect($session->statements())->pluck('parameters.rows');
+
+    expect($rows[0][0]['id'])->toBe('12345678')
+        ->and($rows[0][0]['props']->toArray()['id'])->toBe('12345678')
+        ->and($rows[0][1]['id'])->toBe('6')
+        ->and($rows[1][0]['fromId'])->toBe('12345678')
+        ->and($rows[1][0]['toId'])->toBe('01');
+});
+
+it('runs nothing for an empty mapped graph', function (): void {
+    $session = new RecordingGraphSession([]);
+
+    new Neo4jGraphClient($session)->mergeGraph(['nodes' => [], 'edges' => []]);
+
+    expect($session->statements())->toBeEmpty();
+});
+
 it('searches and counts through the session', function (): void {
     $session = new RecordingGraphSession([
         [

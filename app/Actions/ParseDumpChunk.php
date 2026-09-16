@@ -54,8 +54,7 @@ final readonly class ParseDumpChunk
         }
 
         $entitiesRead = 0;
-        $nodes = 0;
-        $edges = 0;
+        $batch = ['nodes' => [], 'edges' => []];
         $intervals = $chunk->pass === DumpChunkPass::Intervals;
 
         try {
@@ -111,26 +110,42 @@ final readonly class ParseDumpChunk
                 }
 
                 try {
-                    $mapped = $official
-                        ? $this->mapOfficial->handle($dump->dataset, $entity, $dump->id)
-                        : $this->mapper->map($entity, $dump->id);
-
-                    $counts = $this->upsert->handle(
-                        $this->assignPersonIds->handle($mapped),
+                    $mapped = $this->assignPersonIds->handle(
+                        $official
+                            ? $this->mapOfficial->handle($dump->dataset, $entity, $dump->id)
+                            : $this->mapper->map($entity, $dump->id),
                     );
-                } catch (Throwable $exception) {
-                    $this->recordError($dump, $chunk, $lineNumber, 'graph_write', 'Graph write failed.');
+                } catch (Throwable $throwable) {
+                    $this->recordError($dump, $chunk, $lineNumber, 'map', 'Entity mapping failed.');
 
-                    throw $exception;
+                    throw $throwable;
                 }
 
-                $nodes += $counts['nodes'];
-                $edges += $counts['edges'];
+                array_push($batch['nodes'], ...$mapped['nodes']);
+                array_push($batch['edges'], ...$mapped['edges']);
             }
         } finally {
             fclose($handle);
         }
 
+        // One batched write per chunk: the graph client turns this into a few UNWIND
+        // statements instead of one Bolt round-trip per node and edge.
+        try {
+            $counts = $this->upsert->handle($batch);
+        } catch (Throwable $throwable) {
+            $this->recordError(
+                $dump,
+                $chunk,
+                $chunk->line_start,
+                'graph_write',
+                sprintf('Graph write failed for lines %d-%d.', $chunk->line_start, $chunk->line_end),
+            );
+
+            throw $throwable;
+        }
+
+        $nodes = $counts['nodes'];
+        $edges = $counts['edges'];
         $countedEntities = $chunk->pass === DumpChunkPass::Entities ? $entitiesRead : 0;
 
         DB::transaction(function () use ($chunk, $dump, $countedEntities, $nodes, $edges): void {

@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Graph;
 
+use Illuminate\Support\Sleep;
 use Laudis\Neo4j\Contracts\ClientInterface;
+use Laudis\Neo4j\Databags\SummarizedResult;
+use Laudis\Neo4j\Exception\Neo4jException;
 use Laudis\Neo4j\Types\CypherList;
 use Laudis\Neo4j\Types\CypherMap;
 use Laudis\Neo4j\Types\Node;
@@ -12,6 +15,8 @@ use Laudis\Neo4j\Types\Relationship;
 
 final readonly class LaudisGraphSession implements GraphSession
 {
+    private const int MAX_ATTEMPTS = 5;
+
     public function __construct(private ClientInterface $client) {}
 
     /**
@@ -22,7 +27,7 @@ final readonly class LaudisGraphSession implements GraphSession
     {
         $rows = [];
 
-        foreach ($this->client->run($statement, $parameters) as $record) {
+        foreach ($this->runWithRetry($statement, $parameters) as $record) {
             $row = [];
 
             foreach ($record as $key => $value) {
@@ -33,6 +38,30 @@ final readonly class LaudisGraphSession implements GraphSession
         }
 
         return $rows;
+    }
+
+    /**
+     * Concurrent workers inserting into the same hub node's relationship chain
+     * (Dump, Country) occasionally deadlock; Neo4j rolls the statement back and
+     * reports a TransientError. Every statement Gaia runs is an idempotent MERGE or
+     * a read, so a short jittered pause and a re-run is safe.
+     *
+     * @param  array<string, mixed>  $parameters
+     */
+    private function runWithRetry(string $statement, array $parameters): SummarizedResult
+    {
+        $attempt = 1;
+
+        while (true) {
+            try {
+                return $this->client->run($statement, $parameters);
+            } catch (Neo4jException $neo4jException) {
+                throw_if($neo4jException->getClassification() !== 'TransientError' || $attempt >= self::MAX_ATTEMPTS, $neo4jException);
+
+                Sleep::for(random_int(50, 250) * $attempt)->milliseconds();
+                $attempt++;
+            }
+        }
     }
 
     private function normalize(mixed $value): mixed

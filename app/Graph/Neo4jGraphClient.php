@@ -7,6 +7,7 @@ namespace App\Graph;
 use App\Enums\GraphEdgeType;
 use App\Enums\GraphNodeLabel;
 use Laudis\Neo4j\ParameterHelper;
+use Laudis\Neo4j\Types\CypherMap;
 
 final readonly class Neo4jGraphClient implements GraphClient
 {
@@ -91,6 +92,31 @@ final readonly class Neo4jGraphClient implements GraphClient
                 'props' => ParameterHelper::asMap($properties),
             ],
         );
+    }
+
+    /**
+     * One UNWIND statement per node label, then one per (type, fromLabel, toLabel)
+     * edge group, so a chunk costs a handful of Bolt round-trips instead of one per
+     * row. Rows are deduplicated and sorted by id so concurrent workers take locks
+     * on shared hub nodes (Dump, Country, Address) in the same order.
+     *
+     * @param  array{nodes: list<array{label: GraphNodeLabel, id: string, properties: array<string, bool|float|int|string|null>}>, edges: list<array{type: GraphEdgeType, fromLabel: GraphNodeLabel, fromId: string, toLabel: GraphNodeLabel, toId: string, properties: array<string, bool|float|int|string|null>}>}  $mapped
+     */
+    public function mergeGraph(array $mapped): void
+    {
+        foreach ($this->nodeRows($mapped['nodes']) as $label => $rows) {
+            $this->session->run(
+                sprintf('UNWIND $rows AS row MERGE (n:%s {id: row.id}) SET n += row.props', $label),
+                ['rows' => $rows],
+            );
+        }
+
+        foreach ($this->edgeRows($mapped['edges']) as $group) {
+            $this->session->run(
+                $this->edgeBatchStatement($group['type'], $group['fromLabel'], $group['toLabel']),
+                ['rows' => $group['rows']],
+            );
+        }
     }
 
     public function neighborhood(string $id, int $hops, int $limit): Neighborhood
@@ -203,6 +229,115 @@ final readonly class Neo4jGraphClient implements GraphClient
         $id = $rows[0]['id'] ?? null;
 
         return is_string($id) && $id !== '' ? $id : null;
+    }
+
+    /**
+     * @param  list<array{label: GraphNodeLabel, id: string, properties: array<string, bool|float|int|string|null>}>  $nodes
+     * @return array<string, list<array{id: string, props: CypherMap<bool|float|int|string|null>}>>
+     */
+    private function nodeRows(array $nodes): array
+    {
+        $grouped = [];
+
+        foreach ($nodes as $node) {
+            $label = $node['label']->value;
+            $existing = $grouped[$label][$node['id']]['properties'] ?? [];
+            $grouped[$label][$node['id']] = [
+                'id' => $node['id'],
+                'properties' => [...$existing, ...$node['properties'], 'id' => $node['id']],
+            ];
+        }
+
+        $rows = [];
+
+        foreach ($grouped as $label => $byId) {
+            ksort($byId, SORT_STRING);
+
+            foreach ($byId as $node) {
+                $rows[$label][] = [
+                    'id' => $node['id'],
+                    'props' => ParameterHelper::asMap($node['properties']),
+                ];
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  list<array{type: GraphEdgeType, fromLabel: GraphNodeLabel, fromId: string, toLabel: GraphNodeLabel, toId: string, properties: array<string, bool|float|int|string|null>}>  $edges
+     * @return list<array{type: GraphEdgeType, fromLabel: GraphNodeLabel, toLabel: GraphNodeLabel, rows: list<array{fromId: string, toId: string, props: CypherMap<bool|float|int|string|null>}>}>
+     */
+    private function edgeRows(array $edges): array
+    {
+        $groups = [];
+
+        foreach ($edges as $edge) {
+            $key = $edge['type']->value.'|'.$edge['fromLabel']->value.'|'.$edge['toLabel']->value;
+            $groups[$key] ??= [
+                'type' => $edge['type'],
+                'fromLabel' => $edge['fromLabel'],
+                'toLabel' => $edge['toLabel'],
+                'byEnd' => [],
+            ];
+            $existing = $groups[$key]['byEnd'][$edge['toId']][$edge['fromId']]['properties'] ?? [];
+            $groups[$key]['byEnd'][$edge['toId']][$edge['fromId']] = [
+                'fromId' => $edge['fromId'],
+                'toId' => $edge['toId'],
+                'properties' => [...$existing, ...$edge['properties']],
+            ];
+        }
+
+        $batches = [];
+
+        foreach ($groups as $group) {
+            $rows = [];
+            ksort($group['byEnd'], SORT_STRING);
+
+            foreach ($group['byEnd'] as $byStart) {
+                ksort($byStart, SORT_STRING);
+
+                foreach ($byStart as $edge) {
+                    $rows[] = [
+                        'fromId' => $edge['fromId'],
+                        'toId' => $edge['toId'],
+                        'props' => ParameterHelper::asMap($edge['properties']),
+                    ];
+                }
+            }
+
+            $batches[] = [
+                'type' => $group['type'],
+                'fromLabel' => $group['fromLabel'],
+                'toLabel' => $group['toLabel'],
+                'rows' => $rows,
+            ];
+        }
+
+        return $batches;
+    }
+
+    private function edgeBatchStatement(GraphEdgeType $type, GraphNodeLabel $fromLabel, GraphNodeLabel $toLabel): string
+    {
+        if ($fromLabel === GraphNodeLabel::Other && $toLabel === GraphNodeLabel::Other) {
+            return sprintf(
+                'UNWIND $rows AS row
+                MERGE (a {id: row.fromId})
+                ON CREATE SET a:Other, a.id = row.fromId, a.caption = row.fromId
+                MERGE (b {id: row.toId})
+                ON CREATE SET b:Other, b.id = row.toId, b.caption = row.toId
+                MERGE (a)-[r:%s]->(b)
+                SET r += row.props',
+                $type->value,
+            );
+        }
+
+        return sprintf(
+            'UNWIND $rows AS row MATCH (a:%s {id: row.fromId}), (b:%s {id: row.toId}) MERGE (a)-[r:%s]->(b) SET r += row.props',
+            $fromLabel->value,
+            $toLabel->value,
+            $type->value,
+        );
     }
 
     /**

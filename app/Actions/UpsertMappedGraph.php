@@ -18,20 +18,7 @@ final readonly class UpsertMappedGraph
      */
     public function handle(array $mapped): array
     {
-        foreach ($mapped['nodes'] as $node) {
-            $this->graph->mergeNode($node['label'], $node['id'], $node['properties']);
-        }
-
-        foreach ($mapped['edges'] as $edge) {
-            $this->graph->mergeEdge(
-                $edge['type'],
-                $edge['fromLabel'],
-                $edge['fromId'],
-                $edge['toLabel'],
-                $edge['toId'],
-                $edge['properties'],
-            );
-        }
+        $this->graph->mergeGraph($mapped);
 
         return [
             'nodes' => count($mapped['nodes']),

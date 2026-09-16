@@ -28,6 +28,14 @@ interface GraphClient
         array $properties = [],
     ): void;
 
+    /**
+     * Merge every node and then every edge of one mapped graph. Adapters may batch
+     * the writes; the result must equal calling mergeNode/mergeEdge in list order.
+     *
+     * @param  array{nodes: list<array{label: GraphNodeLabel, id: string, properties: array<string, bool|float|int|string|null>}>, edges: list<array{type: GraphEdgeType, fromLabel: GraphNodeLabel, fromId: string, toLabel: GraphNodeLabel, toId: string, properties: array<string, bool|float|int|string|null>}>}  $mapped
+     */
+    public function mergeGraph(array $mapped): void;
+
     public function neighborhood(string $id, int $hops, int $limit): Neighborhood;
 
     /**

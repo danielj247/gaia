@@ -69,6 +69,27 @@ final class InMemoryGraphClient implements GraphClient
         ];
     }
 
+    /**
+     * @param  array{nodes: list<array{label: GraphNodeLabel, id: string, properties: array<string, bool|float|int|string|null>}>, edges: list<array{type: GraphEdgeType, fromLabel: GraphNodeLabel, fromId: string, toLabel: GraphNodeLabel, toId: string, properties: array<string, bool|float|int|string|null>}>}  $mapped
+     */
+    public function mergeGraph(array $mapped): void
+    {
+        foreach ($mapped['nodes'] as $node) {
+            $this->mergeNode($node['label'], $node['id'], $node['properties']);
+        }
+
+        foreach ($mapped['edges'] as $edge) {
+            $this->mergeEdge(
+                $edge['type'],
+                $edge['fromLabel'],
+                $edge['fromId'],
+                $edge['toLabel'],
+                $edge['toId'],
+                $edge['properties'],
+            );
+        }
+    }
+
     public function neighborhood(string $id, int $hops, int $limit): Neighborhood
     {
         $hops = max(1, min($hops, 3));
